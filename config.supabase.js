@@ -2,8 +2,8 @@
 // ZENITH MANAGER — Configuración de Supabase
 // ============================================================
 window.ZENITH_SUPABASE_CONFIG = {
-  SUPABASE_URL: 'https://vowurvdjpzeryjqrjwnr.supabase.co',
-  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvd3VydmRqcHplcnlqcXJqd25yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4MTQwNTgsImV4cCI6MjEwNjM5MDA1OH0.Ckt7ADiA5foMATKy42_AACUgOxZpOQadIECOtsnoduo',
+  SUPABASE_URL: 'https://hruuleytagjowjtxoelj.supabase.co',
+  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhydXVsZXl0YWdqb3dqdHhvZWxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE0MjY2ODYsImV4cCI6MjEwNzAwMjY4Nn0.E9KyzBqPDFi1YSvr-qHXB9LES3q6OHEhHxm7vEjHdq0',
   AUTO_SYNC: {
     enabledByDefault: false,
     changesThreshold: 5,
