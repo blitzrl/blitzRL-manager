@@ -1,7 +1,7 @@
 import { defaultDatabase, SCHEMA_VERSION, DEFAULT_ZONES, getDefaultWidgets, getDefaultTheme } from '../data/database.js';
 
-const KEY = 'ZENITH_DB_V3';
-const OLD_KEYS = ['ZENITH_DB_V2', 'ZENITH_DB_V1'];
+const KEY = 'BLITZ_DB_V3';
+const OLD_KEYS = ['BLITZ_DB_V2', 'BLITZ_DB_V1'];
 let _db = null;
 let _viewCache = null;
 let _viewCacheForId = null;
