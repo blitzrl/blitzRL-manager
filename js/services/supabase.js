@@ -15,7 +15,7 @@ export function getSupabase() {
     }
     _client = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
       auth: {
-        storageKey: 'ZENITH_AUTH_SESSION',
+        storageKey: 'BLITZ_AUTH_SESSION',
         persistSession: true,
         autoRefreshToken: true
       }
