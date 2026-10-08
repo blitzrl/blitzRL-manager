@@ -14,7 +14,7 @@ export function setState(patch){
 }
 export function subscribe(fn){ listeners.add(fn); return () => listeners.delete(fn); }
 
-const DIV_KEY = 'ZENITH_ACTIVE_DIVISION';
+const DIV_KEY = 'BLITZ_ACTIVE_DIVISION';
 
 export function loadActiveDivision(){
   try{
