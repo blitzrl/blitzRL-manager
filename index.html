@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ZENITH MANAGER — Rise to the Zenith</title>
+<script src="https://cdn.jsdelivr.net/npm/@twemoji/api@15.0.3/dist/twemoji.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="css/variables.css" />
+<link rel="stylesheet" href="css/layout.css" />
+<link rel="stylesheet" href="css/components.css" />
+<link rel="stylesheet" href="css/tables.css" />
+<link rel="stylesheet" href="css/forms.css" />
+<link rel="stylesheet" href="css/responsive.css" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div id="app" class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <img id="brandLogo" src="" alt="ZENITH" class="brand-mark" style="display:none;object-fit:contain">
+      <svg id="brandLogoDefault" viewBox="0 0 60 40" class="brand-mark">
+        <polygon points="0,40 30,0 60,40 30,26" fill="url(#zgrad)"/>
+        <defs><linearGradient id="zgrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#E8EAED"/><stop offset="100%" stop-color="#6FA8FF"/>
+        </linearGradient></defs>
+      </svg>
+      <span class="brand-name" id="brandName">ZENITH</span>
+    </div>
+    <nav class="nav">
+      <a class="nav-item" data-route="dashboard"><span class="nav-ico">◆</span> Dashboard</a>
+      <div class="nav-group">
+        <div class="nav-label">COMPETICIÓN</div>
+        <a class="nav-item" data-route="teams">Equipos</a>
+        <a class="nav-item" data-route="players">Jugadores</a>
+        <a class="nav-item" data-route="matches">Jornadas</a>
+        <a class="nav-item" data-route="playoffs">Play-Offs</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">ANÁLISIS</div>
+        <a class="nav-item" data-route="stats">Stats</a>
+        <a class="nav-item" data-route="rosters">Rosters</a>
+        <a class="nav-item" data-route="ballonDor">Ballon d'Or</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">MERCADO</div>
+        <a class="nav-item" data-route="market">Transfer Market</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">MEDIA</div>
+        <a class="nav-item" data-route="news">Noticias</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">SISTEMA</div>
+        <a class="nav-item" data-route="config">Configuración</a>
+      </div>
+    </nav>
+    <div class="sidebar-footer"><small>v2.5 — Season System</small></div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="menu-toggle" id="menuToggle" aria-label="Menu">☰</button>
+      <div class="topbar-left">
+        <div class="season-selector" id="seasonSelector">
+          <button class="chip chip-season chip-season-btn" id="seasonBtn">
+            <span id="currentSeasonName">SEASON 1</span>
+            <span class="chev">▾</span>
+          </button>
+          <div class="season-dropdown hidden" id="seasonDropdown"></div>
+        </div>
+        <div class="division-selector" id="divisionSelector">
+          <button class="chip chip-division chip-division-btn" id="divisionBtn">
+            <span id="currentDivisionName">ZENITH I</span>
+            <span class="chev">▾</span>
+          </button>
+          <div class="division-dropdown hidden" id="divisionDropdown"></div>
+        </div>
+        <span class="chip chip-readonly" id="readOnlyChip" style="display:none">📖 MODO LECTURA</span>
+      </div>
+      <div class="topbar-right">
+        <span class="motto" id="brandMotto">YOUR LEVEL IS NOT YOUR LIMIT</span>
+        <button class="btn btn-sm" id="btnPublishTopbar" title="Publicar en el visualizador">
+          <span id="publishTopbarIcon">☁</span>
+          <span id="publishTopbarLabel">PUBLICAR</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="view" class="view"></main>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div id="toastRoot" class="toast-root"></div>
+</div>
+<script src="config.supabase.js"></script>
+<script type="module" src="js/app.js"></script>
+<!-- Este proyecto NO admite parches externos. Toda modificación se integra nativamente. -->
+</body>
+</html>

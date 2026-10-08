@@ -1,0 +1,30 @@
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.field label{font-size:11px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;font-weight:600}
+.input, .select, .textarea{
+  width:100%;padding:10px 12px;background:var(--bg-elev);
+  border:1px solid var(--border);border-radius:var(--radius-sm);
+  color:var(--silver-light);font-family:inherit;font-size:13.5px;
+  transition:.15s;
+}
+.input:focus,.select:focus,.textarea:focus{
+  outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(111,168,255,.12);
+}
+.textarea{min-height:110px;resize:vertical}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+
+.dropzone{
+  border:1.5px dashed var(--border);
+  border-radius:var(--radius);padding:24px;text-align:center;
+  color:var(--muted);transition:.15s;cursor:pointer;
+}
+.dropzone:hover{border-color:var(--accent);color:var(--silver)}
+.dropzone.dragover{border-color:var(--accent);background:rgba(111,168,255,.04)}
+
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border-soft);margin-bottom:18px}
+.tab{
+  padding:10px 16px;background:none;border:none;color:var(--muted);
+  font-size:12px;letter-spacing:.12em;font-weight:600;text-transform:uppercase;
+  border-bottom:2px solid transparent;
+}
+.tab.active{color:var(--silver-light);border-bottom-color:var(--accent)}

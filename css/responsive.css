@@ -1,0 +1,26 @@
+@media (max-width:1200px){
+  .grid-dash{grid-template-columns:1fr 1fr}
+  .grid-dash > *{grid-column: span 1 !important;grid-row: span 1 !important}
+  .grid-dash > [data-widget="news"]{grid-column: 1 / -1 !important}
+  .bdor-podium-3{grid-template-columns:1fr}
+}
+@media (max-width:900px){
+  .app-shell{grid-template-columns:1fr}
+  .sidebar{position:fixed;left:-260px;top:0;width:240px;z-index:50;transition:.25s;height:100vh}
+  .sidebar.open{left:0}
+  .menu-toggle{display:block}
+  .grid-dash,.grid-3,.grid-2{grid-template-columns:1fr}
+  .row,.row-3{grid-template-columns:1fr}
+  .view{padding:16px}
+  .topbar-right{display:none}
+  .player-form-head{grid-template-columns:1fr}
+  .zones-editor-head,.zones-editor-row{grid-template-columns:36px 1fr 60px 1fr}
+}
+@media (max-width:600px){
+  .kpi-strip{grid-template-columns:1fr 1fr}
+  .view{padding:12px}
+  .card{padding:14px}
+  .ztable{font-size:12px}
+  .ztable thead th,.ztable tbody td{padding:8px 6px}
+  .roster-edit-row{grid-template-columns:30px 1fr 1fr}
+}

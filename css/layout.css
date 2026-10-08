@@ -1,0 +1,172 @@
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg-deep);color:var(--silver);font-family:var(--font);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;cursor:pointer}
+
+.app-shell{display:grid;grid-template-columns:240px 1fr;min-height:100vh;background:radial-gradient(1200px 600px at 80% -10%, rgba(111,168,255,.05), transparent 60%),var(--bg-deep)}
+.sidebar{background:linear-gradient(180deg,#08080A,#050505);border-right:1px solid var(--border-soft);display:flex;flex-direction:column;padding:22px 14px;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 8px 22px;border-bottom:1px solid var(--border-soft)}
+.brand-mark{width:34px;height:24px}
+.brand-name{font-family:var(--font-display);font-size:20px;letter-spacing:.32em;font-weight:600;color:var(--silver-light)}
+.nav{flex:1;display:flex;flex-direction:column;gap:4px;margin-top:18px;overflow-y:auto}
+.nav-label{font-size:10px;letter-spacing:.18em;color:var(--muted);padding:16px 10px 6px;font-weight:600}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-sm);font-size:13.5px;color:var(--silver);transition:.15s ease;border-left:2px solid transparent}
+.nav-item:hover{background:var(--bg-panel);color:var(--silver-light)}
+.nav-item.active{background:linear-gradient(90deg, rgba(111,168,255,.10), transparent);color:var(--silver-light);border-left-color:var(--accent)}
+.nav-ico{color:var(--accent);font-size:10px}
+.sidebar-footer{padding:14px 8px 0;border-top:1px solid var(--border-soft);color:var(--muted);font-size:11px}
+
+.main{display:flex;flex-direction:column;min-width:0}
+.topbar{display:flex;align-items:center;gap:16px;padding:16px 28px;border-bottom:1px solid var(--border-soft);background:rgba(11,11,13,.7);backdrop-filter:blur(8px);position:sticky;top:0;z-index:20}
+.topbar-left{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.topbar-right{margin-left:auto}
+.motto{font-size:11px;letter-spacing:.28em;color:var(--muted);font-weight:500}
+.menu-toggle{display:none;background:none;border:none;color:var(--silver-light);font-size:20px}
+
+.view{padding:26px 28px 60px;max-width:1500px;width:100%;margin:0 auto}
+
+.grid{display:grid;gap:18px}
+.grid-3{grid-template-columns:repeat(3,1fr)}
+.grid-2{grid-template-columns:repeat(2,1fr)}
+.grid-dash{display:grid;grid-template-columns: repeat(3, minmax(0, 1fr));grid-auto-rows: minmax(200px, auto);gap:18px;align-items:stretch}
+
+/* ============================================================
+   WIDGET SLOTS — FIX DEL SCROLL
+   ============================================================ */
+.widget-slot{transition:.15s;position:relative;min-width:0;overflow:hidden;display:flex;flex-direction:column}
+.widget-slot > .card, .widget-slot > .hero{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.widget-slot.draggable{cursor:grab;outline:1px dashed var(--border);outline-offset:2px;border-radius:var(--radius)}
+.widget-slot.dragging{opacity:.4}
+
+/* Fix del scroll de las tablas dentro de widgets */
+.widget-slot .table-wrap,
+.widget-slot .widget-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+.widget-slot .table-wrap::-webkit-scrollbar,
+.widget-slot .widget-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.widget-slot .table-wrap::-webkit-scrollbar-thumb,
+.widget-slot .widget-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+.widget-slot .table-wrap::-webkit-scrollbar-thumb:hover,
+.widget-slot .widget-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+.widget-edit-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 10px;margin-bottom:6px;background:rgba(111,168,255,.06);border:1px solid rgba(111,168,255,.25);border-radius:var(--radius-sm)}
+.widget-handle{font-size:10.5px;letter-spacing:.14em;color:var(--accent);font-weight:600}
+.widget-size-controls{display:flex;gap:6px}
+.wsize-btn{font-size:10px;padding:3px 8px;border-radius:4px;background:var(--bg-elev);border:1px solid var(--border);color:var(--silver-light);cursor:pointer;font-weight:600}
+.wsize-btn:hover{border-color:var(--accent);color:var(--accent)}
+.widget-resize-corner{position:absolute;right:2px;bottom:2px;width:16px;height:16px;cursor:nwse-resize;background:linear-gradient(135deg, transparent 0%, transparent 50%, var(--accent) 50%, var(--accent) 60%, transparent 60%),linear-gradient(135deg, transparent 0%, transparent 70%, var(--accent) 70%, var(--accent) 80%, transparent 80%);opacity:.8;border-bottom-right-radius:var(--radius)}
+
+.widget-instance-actions{display:flex;gap:4px;align-items:center}
+.widget-action-btn{
+  font-size:11px;padding:3px 7px;border-radius:5px;
+  background:var(--bg-elev);border:1px solid var(--border);
+  color:var(--silver-light);cursor:pointer;line-height:1;
+  transition:.12s;
+}
+.widget-action-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(111,168,255,.08)}
+.widget-action-btn.danger{color:var(--danger);border-color:rgba(226,92,92,.35)}
+.widget-action-btn.danger:hover{border-color:var(--danger);background:rgba(226,92,92,.10)}
+
+.home-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px}
+
+.page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px}
+.page-title{font-family:var(--font-display);letter-spacing:.24em;font-size:20px;color:var(--silver-light)}
+.back-row{display:flex;gap:8px;align-items:center;margin-bottom:16px}
+
+/* ──── SELECTOR DE DIVISIÓN ──── */
+.division-selector{position:relative}
+.chip-division-btn{display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 12px;border-radius:100px}
+.chip-division-btn .chev{font-size:9px;color:var(--muted)}
+.division-dropdown{position:absolute;top:calc(100% + 6px);left:0;min-width:200px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow);padding:6px;z-index:60}
+.division-dropdown.hidden{display:none}
+.division-dropdown-item{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;background:transparent;border:none;border-radius:6px;color:var(--silver);font-size:12.5px;cursor:pointer;text-align:left}
+.division-dropdown-item:hover{background:var(--bg-elev);color:var(--silver-light)}
+.division-dropdown-item.active{background:rgba(111,168,255,.1);color:var(--accent)}
+.division-dropdown-tier{font-family:var(--font-display);font-size:11px;color:var(--muted);min-width:24px}
+.division-dropdown-item.active .division-dropdown-tier{color:var(--accent)}
+.division-dropdown-name{flex:1}
+.division-dropdown-sep{height:1px;background:var(--border-soft);margin:6px 0}
+.division-dropdown-manage{width:100%;padding:8px 10px;background:transparent;border:none;border-radius:6px;color:var(--muted);font-size:11.5px;cursor:pointer;text-align:left;letter-spacing:.1em}
+.division-dropdown-manage:hover{background:var(--bg-elev);color:var(--silver-light)}
+.division-dropdown-empty{padding:10px;color:var(--muted);font-size:12px;text-align:center}
+
+/* ──── SELECTOR DE TEMPORADA ──── */
+.season-selector{position:relative}
+.chip-season-btn{display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 12px;border-radius:100px;background:rgba(230,196,118,.08);border-color:rgba(230,196,118,.35);color:var(--gold)}
+.chip-season-btn:hover{border-color:var(--gold);background:rgba(230,196,118,.14)}
+.chip-season-btn .chev{font-size:9px;color:var(--gold);opacity:.7}
+.season-dropdown{position:absolute;top:calc(100% + 6px);left:0;min-width:280px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow);padding:6px;z-index:60;max-height:420px;overflow-y:auto}
+.season-dropdown.hidden{display:none}
+.season-dropdown-item{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:9px 10px;background:transparent;border:none;border-radius:6px;color:var(--silver);font-size:12.5px;cursor:pointer;text-align:left;transition:.12s}
+.season-dropdown-item:hover{background:var(--bg-elev);color:var(--silver-light)}
+.season-dropdown-item.active{background:rgba(230,196,118,.1);color:var(--gold)}
+.season-dropdown-name{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.season-dropdown-name > span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.season-dropdown-meta{font-size:10px;color:var(--muted);letter-spacing:.06em}
+.season-dropdown-item.active .season-dropdown-meta{color:rgba(230,196,118,.7)}
+.season-export-btn{font-size:11px;padding:3px 7px;border-radius:4px;background:var(--bg-elev);border:1px solid var(--border);color:var(--muted);cursor:pointer;flex-shrink:0;line-height:1}
+.season-export-btn:hover{border-color:var(--accent);color:var(--accent)}
+.season-dropdown-sep{height:1px;background:var(--border-soft);margin:6px 0}
+.season-dropdown-manage{width:100%;padding:8px 10px;background:transparent;border:none;border-radius:6px;color:var(--muted);font-size:11.5px;cursor:pointer;text-align:left;letter-spacing:.1em}
+.season-dropdown-manage:hover{background:var(--bg-elev);color:var(--silver-light)}
+.season-dropdown-empty{padding:10px;color:var(--muted);font-size:12px;text-align:center}
+
+.chip-readonly{
+  background:rgba(230,196,118,.18) !important;
+  border-color:var(--gold) !important;
+  color:var(--gold) !important;
+  font-weight:700;
+  letter-spacing:.12em;
+  animation:pulseGold 2.4s ease-in-out infinite;
+}
+@keyframes pulseGold{
+  0%,100%{box-shadow:0 0 0 0 rgba(230,196,118,.35)}
+  50%{box-shadow:0 0 0 8px rgba(230,196,118,0)}
+}
+
+/* ============================================================
+   MATCH TEAMS EN JORNADAS
+   ============================================================ */
+.match-row-top {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 14px;
+}
+.match-team {
+  max-width: 220px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.match-team-home { justify-self: end; justify-content: flex-end; }
+.match-team-away { justify-self: start; justify-content: flex-start; }
+.match-team[draggable="true"] { cursor: grab; border-radius: 8px; transition: .12s; }
+.match-team[draggable="true"]:hover { background: rgba(111,168,255,.06); outline: 1px dashed rgba(111,168,255,.4); }
+.match-team[draggable="true"]:active { cursor: grabbing; }
+.match-team.dragging { opacity: .35; }
+.match-team.drop-hover { background: rgba(111,168,255,.12); outline: 2px dashed var(--accent); outline-offset: 2px; }
+.match-team[data-empty="true"] {
+  min-width: 100px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border-soft);
+  border-radius: 8px;
+  opacity: .6;
+}
