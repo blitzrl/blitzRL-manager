@@ -1,5 +1,5 @@
 import { getDB, mutate } from './storage.js';
-import { DEFAULT_SYSTEM_PROMPT } from '../data/database.js';
+import { DEFAULT_SYSTEM_PROMPT, DEFAULT_TEAM_PROMPT_IMAGE, DEFAULT_TEAM_PROMPT_TEXT, DEFAULT_LOGO_PROMPT } from '../data/database.js';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const DEBUG_MATCH = false;
@@ -57,6 +57,15 @@ function levelFromScore(score, thresholds){
   return 'low';
 }
 
+function cleanJSON(text){
+  if(!text) return null;
+  let cleaned = text.trim();
+  if(cleaned.startsWith('```json')) cleaned = cleaned.substring(7);
+  if(cleaned.startsWith('```')) cleaned = cleaned.substring(3);
+  if(cleaned.endsWith('```')) cleaned = cleaned.substring(0, cleaned.length - 3);
+  return cleaned.trim();
+}
+
 export const AIService = {
   DEFAULT_MODEL: 'gemini-2.0-flash',
   DEFAULT_THRESHOLDS,
@@ -88,10 +97,10 @@ export const AIService = {
     const data = await res.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if(!text) throw new Error('La IA no devolvió contenido');
-    try{ return JSON.parse(text); }
+    try{ return JSON.parse(cleanJSON(text)); }
     catch{
       const match = text.match(/\{[\s\S]*\}/);
-      if(match) return JSON.parse(match[0]);
+      if(match) return JSON.parse(cleanJSON(match[0]));
       throw new Error('La IA no devolvió JSON válido');
     }
   },
@@ -119,27 +128,20 @@ export const AIService = {
     return { ok:true, models };
   },
 
-  // ============================================================
-  // MATCHER JERÁRQUICO: primero equipos, luego jugadores
-  // ============================================================
   matchWithRoster(iaData, matchTeamA, matchTeamB){
     const db = getDB();
     const thresholds = getThresholds();
     const warnings = [...(iaData.warnings || [])];
 
-    // Detectar si el usuario aún tiene el prompt viejo (formato teamA/teamB)
-    // y ofrecer un aviso para que actualice
     let legacy = false;
     if(!Array.isArray(iaData.teams)){
       if(iaData.teamA || iaData.teamB) legacy = true;
     }
 
-    // Candidatos: los dos equipos del partido
     const candidates = [];
     if(matchTeamA) candidates.push({ id: matchTeamA.id, name: matchTeamA.name, side: 'A' });
     if(matchTeamB) candidates.push({ id: matchTeamB.id, name: matchTeamB.name, side: 'B' });
 
-    // Si la IA devolvió formato viejo, convertirlo al nuevo como fallback
     let detectedTeamsRaw = iaData.teams;
     if(legacy){
       detectedTeamsRaw = [];
@@ -163,7 +165,6 @@ export const AIService = {
     const usedTeams = new Set();
 
     const detectedTeams = (detectedTeamsRaw || []).map(team => {
-      // 1. Matchear el equipo detectado contra los candidatos del partido
       let bestCand = null;
       let bestScore = 0;
       candidates.forEach(c => {
@@ -180,7 +181,6 @@ export const AIService = {
         teamLevel = levelFromScore(bestScore, thresholds);
       }
 
-      // 2. Matchear los jugadores DENTRO del roster del equipo asignado
       let roster = [];
       if(assignedTeam){
         const dbTeam = db.teams.find(t => t.id === assignedTeam.id);
@@ -234,6 +234,123 @@ export const AIService = {
       thresholds,
       warnings
     };
+  },
+
+  // ============================================================
+  // GENERADOR DE TORNEOS — EQUIPOS DESDE IMAGEN
+  // ============================================================
+  async generateTeamsFromImage(file){
+    const cfg = getAIConfig();
+    if(!cfg.apiKey) throw new Error('Falta la API key de Gemini. Configura en SISTEMA → Configuración → IA.');
+    const base64 = await fileToBase64(file);
+    const prompt = cfg.tournamentPrompts?.image || DEFAULT_TEAM_PROMPT_IMAGE;
+    const model = cfg.model || AIService.DEFAULT_MODEL;
+    
+    const body = {
+      contents: [{
+        parts: [
+          { text: prompt },
+          { inline_data: { mime_type: file.type, data: base64 } }
+        ]
+      }],
+      generationConfig: { response_mime_type: 'application/json', temperature: 0.1 }
+    };
+
+    const res = await fetch(`${GEMINI_BASE}/models/${model}:generateContent?key=${encodeURIComponent(cfg.apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    
+    if(!res.ok) throw new Error(`Gemini error ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if(!text) throw new Error('La IA no devolvió contenido');
+    return JSON.parse(cleanJSON(text));
+  },
+
+  // ============================================================
+  // GENERADOR DE TORNEOS — EQUIPOS DESDE TEXTO
+  // ============================================================
+  async generateTeamsFromText(text){
+    const cfg = getAIConfig();
+    if(!cfg.apiKey) throw new Error('Falta la API key de Gemini. Configura en SISTEMA → Configuración → IA.');
+    const prompt = cfg.tournamentPrompts?.text || DEFAULT_TEAM_PROMPT_TEXT;
+    const model = cfg.model || AIService.DEFAULT_MODEL;
+    
+    const body = {
+      contents: [{
+        parts: [
+          { text: `${prompt}\n\nTexto del usuario:\n${text}` }
+        ]
+      }],
+      generationConfig: { response_mime_type: 'application/json', temperature: 0.1 }
+    };
+
+    const res = await fetch(`${GEMINI_BASE}/models/${model}:generateContent?key=${encodeURIComponent(cfg.apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    
+    if(!res.ok) throw new Error(`Gemini error ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    const textOut = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if(!textOut) throw new Error('La IA no devolvió contenido');
+    return JSON.parse(cleanJSON(textOut));
+  },
+
+  // ============================================================
+  // GENERADOR DE TORNEOS — ASIGNAR LOGOS A EQUIPOS
+  // ============================================================
+  async assignLogosToTeams(teams, logos){
+    const cfg = getAIConfig();
+    if(!cfg.apiKey) throw new Error('Falta la API key de Gemini.');
+    const prompt = cfg.tournamentPrompts?.logos || DEFAULT_LOGO_PROMPT;
+    const model = cfg.model || AIService.DEFAULT_MODEL;
+    
+    const BATCH_SIZE = 20;
+    let allAssignments = [];
+    let allWarnings = [];
+
+    for(let i = 0; i < logos.length; i += BATCH_SIZE){
+      const batch = logos.slice(i, i + BATCH_SIZE);
+      
+      const parts = [{ text: prompt + `\n\nEquipos:\n${JSON.stringify(teams.map(t => ({ name: t.name, tag: t.tag })))}\n\nAnaliza estas imágenes (índices del 0 al ${batch.length - 1} en este lote):\n` }];
+      
+      batch.forEach(logo => {
+        parts.push({ text: `[Índice ${logo.index}] Archivo: ${logo.filename}` });
+        parts.push({ inline_data: { mime_type: logo.type || 'image/png', data: logo.base64 } });
+      });
+
+      const body = {
+        contents: [{ parts }],
+        generationConfig: { response_mime_type: 'application/json', temperature: 0.1 }
+      };
+
+      const res = await fetch(`${GEMINI_BASE}/models/${model}:generateContent?key=${encodeURIComponent(cfg.apiKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      if(!res.ok) throw new Error(`Gemini error ${res.status}: ${await res.text()}`);
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if(text){
+        const parsed = JSON.parse(cleanJSON(text));
+        if(parsed.assignments) {
+          // Ajustar el logoIndex al índice real (por el batching)
+          parsed.assignments.forEach(a => {
+            a.logoIndex += i;
+            allAssignments.push(a);
+          });
+        }
+        if(parsed.warnings) allWarnings.push(...parsed.warnings);
+      }
+    }
+
+    return { assignments: allAssignments, warnings: allWarnings };
   }
 };
 
