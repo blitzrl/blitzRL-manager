@@ -2954,7 +2954,4 @@ const AITournamentWizard = {
         toast('Error: ' + e.message, 'error');
       }
     });
-  }
-};
-  }
-};
+ 
