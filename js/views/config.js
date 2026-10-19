@@ -2160,16 +2160,18 @@ function esc(str){
 const AITournamentWizard = {
   state: {
     step: 1,
-    mode: 'image', // 'image' | 'text'
+    mode: 'image',
     imageFile: null,
     textContent: '',
-    actionType: 'append', // 'append' | 'replace'
-    teams: [], // { tempId, name, originalName, tag, coach, logo, filename, assignedLogoIndex }
+    actionType: 'append',
+    teams: [],
     corrections: [],
     warnings: [],
-    logosPool: [], // { index, base64, type, filename, assignedTo }
+    logosPool: [],
     targetDivisionId: null
   },
+
+  _pasteHandler: null,
 
   open() {
     this.state = {
@@ -2194,15 +2196,24 @@ const AITournamentWizard = {
       onMount: (root) => {
         this.root = root;
         this.render();
+      },
+      onClose: () => {
+        this._cleanup();
       }
     });
+  },
+
+  _cleanup() {
+    if (this._pasteHandler) {
+      document.removeEventListener('paste', this._pasteHandler);
+      this._pasteHandler = null;
+    }
   },
 
   render() {
     const body = this.root.querySelector('#aiWizardBody');
     const footer = this.root.querySelector('#aiWizardFooter');
     
-    // Renderizar pasos
     body.innerHTML = `
       <div class="ai-wizard-steps">
         <div class="ai-wizard-step ${this.state.step === 1 ? 'active' : this.state.step > 1 ? 'done' : ''}">1. Entrada</div>
@@ -2252,7 +2263,7 @@ const AITournamentWizard = {
           <div style="font-size:12px;">También puedes pegar con <kbd style="background:var(--bg-elev);padding:2px 6px;border-radius:4px;border:1px solid var(--border)">Ctrl + V</kbd></div>
         </div>
         <input type="file" id="fileImageInput" accept="image/*" hidden>
-        ${this.state.imageFile ? `<div style="margin-top:10px;font-size:12px;color:var(--success)">✅ Imagen cargada: ${this.state.imageFile.name}</div>` : ''}
+        ${this.state.imageFile ? `<div style="margin-top:10px;font-size:12px;color:var(--success)">✅ Imagen cargada: ${esc(this.state.imageFile.name)}</div>` : ''}
       </div>
 
       <div id="modeTextWrap" style="display:${this.state.mode === 'text' ? '' : 'none'}">
@@ -2287,121 +2298,150 @@ const AITournamentWizard = {
     // Event Listeners
     const tabImg = content.querySelector('#tabModeImage');
     const tabTxt = content.querySelector('#tabModeText');
-    tabImg.addEventListener('click', () => { this.state.mode = 'image'; this.render(); });
-    tabTxt.addEventListener('click', () => { this.state.mode = 'text'; this.render(); });
+    if (tabImg) tabImg.addEventListener('click', () => { this.state.mode = 'image'; this.render(); });
+    if (tabTxt) tabTxt.addEventListener('click', () => { this.state.mode = 'text'; this.render(); });
 
     content.querySelectorAll('input[name="wizAction"]').forEach(r => {
       r.addEventListener('change', (e) => { this.state.actionType = e.target.value; });
     });
 
-    // Image Input
-    const dropImage = content.querySelector('#dropImageZone');
-    const fileImage = content.querySelector('#fileImageInput');
-    dropImage.addEventListener('click', () => fileImage.click());
-    fileImage.addEventListener('change', () => {
-      if (fileImage.files[0]) { this.state.imageFile = fileImage.files[0]; this.render(); }
-    });
-    
-    // Paste Event (Ctrl+V)
-    const handlePaste = (e) => {
-      if (this.state.mode !== 'image') return;
-      const items = (e.clipboardData || e.originalEvent.clipboardData).items;
-      for (let item of items) {
-        if (item.type.indexOf('image') !== -1) {
-          const blob = item.getAsFile();
-          this.state.imageFile = new File([blob], "pasted_image.png", { type: blob.type });
-          this.render();
-          toast('Imagen pegada desde el portapapeles', 'success');
-          e.preventDefault();
-          return;
-        }
-      }
-    };
-    document.addEventListener('paste', handlePaste);
-    this.root.dataset.pasteListener = 'active';
-    
-    // Text Input
-    const textArea = content.querySelector('#textInput');
-    if (textArea) textArea.addEventListener('input', () => { this.state.textContent = textArea.value; });
-
-    const dropTxt = content.querySelector('#dropTxtZone');
-    const fileTxt = content.querySelector('#fileTxtInput');
-    dropTxt.addEventListener('click', () => fileTxt.click());
-    dropTxt.addEventListener('dragover', e => { e.preventDefault(); dropTxt.style.borderColor = 'var(--accent)'; });
-    dropTxt.addEventListener('dragleave', () => { dropTxt.style.borderColor = 'var(--border)'; });
-    dropTxt.addEventListener('drop', e => {
-      e.preventDefault();
-      dropTxt.style.borderColor = 'var(--border)';
-      if (e.dataTransfer.files[0]) {
-        const reader = new FileReader();
-        reader.onload = ev => { this.state.textContent = ev.target.result; this.render(); };
-        reader.readAsText(e.dataTransfer.files[0]);
-      }
-    });
-    fileTxt.addEventListener('change', () => {
-      if (fileTxt.files[0]) {
-        const reader = new FileReader();
-        reader.onload = ev => { this.state.textContent = ev.target.result; this.render(); };
-        reader.readAsText(fileTxt.files[0]);
-      }
-    });
-
-    // Analizar
-    content.querySelector('#btnAnalyzeStep1').addEventListener('click', async () => {
-      if (this.state.mode === 'image' && !this.state.imageFile) return toast('Sube o pega una imagen primero', 'error');
-      if (this.state.mode === 'text' && !this.state.textContent.trim()) return toast('Escribe o pega el texto primero', 'error');
+    // Image Input + Drag & Drop + Paste
+    if (this.state.mode === 'image') {
+      const dropImage = content.querySelector('#dropImageZone');
+      const fileImage = content.querySelector('#fileImageInput');
       
-      const btn = content.querySelector('#btnAnalyzeStep1');
-      btn.disabled = true;
-      btn.textContent = 'ANALIZANDO...';
-
-      try {
-        let res;
-        if (this.state.mode === 'image') {
-          res = await AIService.generateTeamsFromImage(this.state.imageFile);
-        } else {
-          res = await AIService.generateTeamsFromText(this.state.textContent);
-        }
-
-        if (!res.teams || !Array.isArray(res.teams)) throw new Error('La IA no devolvió una lista de equipos válida.');
-
-        // Procesar equipos
-        this.state.teams = res.teams.map((t, i) => {
-          let tag = t.tag || '';
-          if (!tag) {
-            tag = t.name.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, '');
-            if (tag.length < 3) tag = t.name.substring(0, 4).toUpperCase().replace(/[^A-Z]/g, '');
+      if (dropImage && fileImage) {
+        dropImage.addEventListener('click', () => fileImage.click());
+        
+        // Drag & Drop
+        dropImage.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          dropImage.classList.add('dragover');
+        });
+        dropImage.addEventListener('dragleave', () => {
+          dropImage.classList.remove('dragover');
+        });
+        dropImage.addEventListener('drop', (e) => {
+          e.preventDefault();
+          dropImage.classList.remove('dragover');
+          const f = e.dataTransfer.files[0];
+          if (f && f.type.startsWith('image/')) {
+            this.state.imageFile = f;
+            this.render();
+          } else {
+            toast('El archivo no es una imagen válida', 'error');
           }
-          return {
-            tempId: `tmp_${i}_${Date.now()}`,
-            name: t.name,
-            originalName: t.originalName || '',
-            tag: tag,
-            coach: t.coach || '',
-            logo: '',
-            filename: '',
-            assignedLogoIndex: null
-          };
         });
 
-        this.state.corrections = res.corrections || [];
-        this.state.warnings = res.warnings || [];
-        this.state.step = 2;
-        this.render();
-      } catch (e) {
-        console.error(e);
-        toast('Error: ' + e.message, 'error');
-        btn.disabled = false;
-        btn.textContent = 'ANALIZAR →';
+        fileImage.addEventListener('change', () => {
+          if (fileImage.files[0]) { this.state.imageFile = fileImage.files[0]; this.render(); }
+        });
       }
-    });
 
-    // Cleanup paste listener on close
-    if (!this.root.dataset.cleanupBound) {
-      this.root.dataset.cleanupBound = '1';
-      const origClose = closeTopModal;
-      // Nota: closeTopModal no tiene hook nativo, pero el modal padre se elimina del DOM,
-      // así que el listener queda huérfano. Es aceptable para esta sesión.
+      // Paste Listener (limpiamos el anterior si existía)
+      this._cleanup();
+      this._pasteHandler = (e) => {
+        if (this.state.mode !== 'image') return;
+        const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items || [];
+        for (let item of items) {
+          if (item.type.indexOf('image') !== -1) {
+            const blob = item.getAsFile();
+            this.state.imageFile = new File([blob], "pasted_image.png", { type: blob.type });
+            this.render();
+            toast('Imagen pegada desde el portapapeles', 'success');
+            e.preventDefault();
+            return;
+          }
+        }
+      };
+      document.addEventListener('paste', this._pasteHandler);
+    }
+
+    // Text Input
+    if (this.state.mode === 'text') {
+      const textArea = content.querySelector('#textInput');
+      if (textArea) {
+        // Guardar lo que haya antes de re-renderizar
+        textArea.addEventListener('input', () => { this.state.textContent = textArea.value; });
+      }
+
+      const dropTxt = content.querySelector('#dropTxtZone');
+      const fileTxt = content.querySelector('#fileTxtInput');
+      
+      if (dropTxt && fileTxt) {
+        dropTxt.addEventListener('click', () => fileTxt.click());
+        dropTxt.addEventListener('dragover', e => { e.preventDefault(); dropTxt.classList.add('dragover'); });
+        dropTxt.addEventListener('dragleave', () => { dropTxt.classList.remove('dragover'); });
+        dropTxt.addEventListener('drop', e => {
+          e.preventDefault();
+          dropTxt.classList.remove('dragover');
+          const f = e.dataTransfer.files[0];
+          if (f) {
+            const reader = new FileReader();
+            reader.onload = ev => { this.state.textContent = ev.target.result; this.render(); };
+            reader.readAsText(f);
+          }
+        });
+        fileTxt.addEventListener('change', () => {
+          if (fileTxt.files[0]) {
+            const reader = new FileReader();
+            reader.onload = ev => { this.state.textContent = ev.target.result; this.render(); };
+            reader.readAsText(fileTxt.files[0]);
+          }
+        });
+      }
+    }
+
+    // Analizar — Buscamos en footer porque está ahí
+    const btnAnalyze = footer.querySelector('#btnAnalyzeStep1');
+    if (btnAnalyze) {
+      btnAnalyze.addEventListener('click', async () => {
+        if (this.state.mode === 'image' && !this.state.imageFile) return toast('Sube o pega una imagen primero', 'error');
+        if (this.state.mode === 'text' && !this.state.textContent.trim()) return toast('Escribe o pega el texto primero', 'error');
+        
+        btnAnalyze.disabled = true;
+        btnAnalyze.textContent = 'ANALIZANDO...';
+
+        try {
+          let res;
+          if (this.state.mode === 'image') {
+            res = await AIService.generateTeamsFromImage(this.state.imageFile);
+          } else {
+            res = await AIService.generateTeamsFromText(this.state.textContent);
+          }
+
+          if (!res.teams || !Array.isArray(res.teams)) throw new Error('La IA no devolvió una lista de equipos válida.');
+
+          this.state.teams = res.teams.map((t, i) => {
+            let tag = t.tag || '';
+            if (!tag) {
+              tag = t.name.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, '');
+              if (tag.length < 3) tag = t.name.substring(0, 4).toUpperCase().replace(/[^A-Z]/g, '');
+            }
+            return {
+              tempId: `tmp_${i}_${Date.now()}`,
+              name: t.name,
+              originalName: t.originalName || '',
+              tag: tag,
+              coach: t.coach || '',
+              logo: '',
+              filename: '',
+              assignedLogoIndex: null
+            };
+          });
+
+          this.state.corrections = res.corrections || [];
+          this.state.warnings = res.warnings || [];
+          this.state.step = 2;
+          this._cleanup(); // Limpiar listener de paste
+          this.render();
+        } catch (e) {
+          console.error(e);
+          toast('Error: ' + e.message, 'error');
+          btnAnalyze.disabled = false;
+          btnAnalyze.textContent = 'ANALIZAR →';
+        }
+      });
     }
   },
 
@@ -2506,14 +2546,13 @@ const AITournamentWizard = {
       });
     });
 
-    // Navegación
-    content.querySelector('#btnBackStep2').addEventListener('click', () => {
+    // Navegación (footer)
+    footer.querySelector('#btnBackStep2')?.addEventListener('click', () => {
       this.state.step = 1;
       this.render();
     });
 
-    content.querySelector('#btnNextStep2').addEventListener('click', () => {
-      // Validar nombres no vacíos
+    footer.querySelector('#btnNextStep2')?.addEventListener('click', () => {
       if (this.state.teams.some(t => !t.name.trim())) {
         return toast('Todos los equipos deben tener un nombre', 'error');
       }
@@ -2545,7 +2584,6 @@ const AITournamentWizard = {
       </div>
 
       <div style="display:flex;gap:20px;">
-        <!-- Columna de Equipos -->
         <div style="flex:2;min-width:0;">
           <div class="reporter-subhead">EQUIPOS DETECTADOS</div>
           <div style="max-height:300px;overflow-y:auto;padding-right:4px;">
@@ -2569,7 +2607,6 @@ const AITournamentWizard = {
           </div>
         </div>
 
-        <!-- Columna de Logos sin usar -->
         <div style="flex:1;min-width:0;">
           <div class="reporter-subhead">SIN ASIGNAR (${unassignedLogos.length})</div>
           <div class="ai-logos-grid">
@@ -2598,8 +2635,6 @@ const AITournamentWizard = {
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
         if (!f.type.startsWith('image/')) continue;
-        
-        // Comprimir a base64
         try {
           const b64 = await compressImage(f, 256, 256);
           const rawB64 = b64.split(',')[1];
@@ -2614,7 +2649,7 @@ const AITournamentWizard = {
       }
       this.render();
     });
-    content.querySelector('#btnUploadLogos').addEventListener('click', () => fileInput.click());
+    content.querySelector('#btnUploadLogos')?.addEventListener('click', () => fileInput.click());
 
     // Asignar con IA
     content.querySelector('#btnAssignAILogos')?.addEventListener('click', async () => {
@@ -2622,8 +2657,8 @@ const AITournamentWizard = {
       
       const btn = content.querySelector('#btnAssignAILogos');
       const status = content.querySelector('#aiAssignStatus');
-      btn.disabled = true;
-      status.style.display = 'block';
+      if (btn) btn.disabled = true;
+      if (status) status.style.display = 'block';
 
       try {
         const res = await AIService.assignLogosToTeams(
@@ -2631,7 +2666,6 @@ const AITournamentWizard = {
           this.state.logosPool
         );
 
-        // Limpiar asignaciones previas
         this.state.teams.forEach(t => { t.assignedLogoIndex = null; t.logo = ''; });
         this.state.logosPool.forEach(l => { l.assignedTo = null; });
 
@@ -2651,8 +2685,8 @@ const AITournamentWizard = {
         console.error(e);
         toast('Error al asignar: ' + e.message, 'error');
       } finally {
-        btn.disabled = false;
-        status.style.display = 'none';
+        if (btn) btn.disabled = false;
+        if (status) status.style.display = 'none';
       }
     });
 
@@ -2679,7 +2713,6 @@ const AITournamentWizard = {
         const teamId = el.dataset.dropTarget;
         const logo = this.state.logosPool[draggedLogoIdx];
         
-        // Desasignar si ese logo ya estaba en otro equipo
         this.state.logosPool.forEach(l => { if (l.assignedTo === teamId) l.assignedTo = null; });
         
         logo.assignedTo = teamId;
@@ -2688,13 +2721,13 @@ const AITournamentWizard = {
       });
     });
 
-    // Navegación
-    content.querySelector('#btnBackStep3').addEventListener('click', () => {
+    // Navegación (footer)
+    footer.querySelector('#btnBackStep3')?.addEventListener('click', () => {
       this.state.step = 2;
       this.render();
     });
 
-    content.querySelector('#btnNextStep3').addEventListener('click', () => {
+    footer.querySelector('#btnNextStep3')?.addEventListener('click', () => {
       this.state.step = 4;
       this.render();
     });
@@ -2751,16 +2784,16 @@ const AITournamentWizard = {
       </button>
     `;
 
-    content.querySelector('#btnBackStep4').addEventListener('click', () => {
+    // Navegación (footer)
+    footer.querySelector('#btnBackStep4')?.addEventListener('click', () => {
       this.state.step = 3;
       this.render();
     });
 
-    content.querySelector('#btnCreateStep4').addEventListener('click', () => {
+    footer.querySelector('#btnCreateStep4')?.addEventListener('click', () => {
       try {
-        const btn = content.querySelector('#btnCreateStep4');
-        btn.disabled = true;
-        btn.textContent = 'CREANDO...';
+        const btn = footer.querySelector('#btnCreateStep4');
+        if (btn) { btn.disabled = true; btn.textContent = 'CREANDO...'; }
 
         mutate(d => {
           const div = d.divisions.find(x => x.id === this.state.targetDivisionId);
@@ -2801,8 +2834,8 @@ const AITournamentWizard = {
       } catch(e) {
         console.error(e);
         toast('Error al crear equipos: ' + e.message, 'error');
-        content.querySelector('#btnCreateStep4').disabled = false;
-        content.querySelector('#btnCreateStep4').textContent = isReplace ? 'REEMPLAZAR Y CREAR' : 'CREAR EQUIPOS';
+        const btn = footer.querySelector('#btnCreateStep4');
+        if (btn) { btn.disabled = false; btn.textContent = isReplace ? 'REEMPLAZAR Y CREAR' : 'CREAR EQUIPOS'; }
       }
     });
   },
@@ -2856,21 +2889,18 @@ const AITournamentWizard = {
     
     const checkSum = () => {
       const sum = inputs.reduce((a, i) => a + (parseInt(i.value) || 0), 0);
-      if (sum > totalTeams) {
-        warn.style.display = 'block';
-      } else {
-        warn.style.display = 'none';
-      }
+      if (warn) warn.style.display = sum > totalTeams ? 'block' : 'none';
     };
-    inputs.forEach(i => i.addEventListener('input', checkSum));
+    inputs.forEach(i => i && i.addEventListener('input', checkSum));
     checkSum();
 
-    content.querySelector('#btnSkipStep5').addEventListener('click', () => {
+    // Navegación (footer)
+    footer.querySelector('#btnSkipStep5')?.addEventListener('click', () => {
       closeTopModal();
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     });
 
-    content.querySelector('#btnSaveStep5').addEventListener('click', () => {
+    footer.querySelector('#btnSaveStep5')?.addEventListener('click', () => {
       try {
         const po = parseInt(content.querySelector('#cfgPlayoffs').value) || 0;
         const pi = parseInt(content.querySelector('#cfgPlayin').value) || 0;
@@ -2896,7 +2926,6 @@ const AITournamentWizard = {
              zones.push({ from: 1, to: pr, type: 'promotion', color: '#facc15' });
           }
 
-          // Rellenar gaps con 'none'
           const finalZones = [];
           let currentPos = 1;
           zones.sort((a,b) => a.from - b.from).forEach(z => {
@@ -2925,5 +2954,7 @@ const AITournamentWizard = {
         toast('Error: ' + e.message, 'error');
       }
     });
+  }
+};
   }
 };
