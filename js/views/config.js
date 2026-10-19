@@ -636,7 +636,6 @@ function renderPresetRow(preset){
   `;
 }
 
-// Lee el estado actual del formulario de tema (sin guardar)
 function readThemeForm(){
   const val = id => document.getElementById(id)?.value || '';
 
@@ -669,13 +668,11 @@ function readThemeForm(){
   return theme;
 }
 
-// Aplica el tema al DOM en vivo (preview)
 function applyThemePreview(){
   try {
     const t = readThemeForm();
     applyTheme(t);
     updateThemeContrastWarn(t);
-    // Actualizar el preview del degradado
     const preview = document.getElementById('themePreviewBg');
     if (preview) preview.style.background = themePreviewBg(t);
   } catch(e) {
@@ -696,7 +693,6 @@ function updateThemeContrastWarn(theme){
       luminance = colors.reduce((a, c) => a + hexLuminance(c), 0) / colors.length;
     }
   }
-  // Si luminancia promedio > 0.5, avisar
   warn.style.display = luminance > 0.5 ? '' : 'none';
 }
 
@@ -711,14 +707,11 @@ function hexLuminance(hex){
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-// Vincula todos los eventos de la pestaña Estética
 function bindThemeTab(){
-  // Inicializar logo temporal desde el theme actual
   const db = getDB();
   const currentTheme = db.config.theme?.active || getDefaultTheme();
   window.__themeEditingLogo = currentTheme.logo || '';
 
-  // ─── Radio: tipo de fondo ───
   document.querySelectorAll('input[name="themeBgType"]').forEach(radio => {
     radio.addEventListener('change', () => {
       const type = document.querySelector('input[name="themeBgType"]:checked')?.value;
@@ -730,7 +723,6 @@ function bindThemeTab(){
     });
   });
 
-  // ─── Color sólido: input ↔ hex bidireccional ───
   const solidColor = document.getElementById('themeSolidColor');
   const solidHex = document.getElementById('themeSolidColorHex');
   if (solidColor && solidHex) {
@@ -741,13 +733,11 @@ function bindThemeTab(){
     });
   }
 
-  // ─── Colores de acento: input ↔ hex ───
   bindColorPair('themeAccent', 'themeAccentHex');
   bindColorPair('themeGold', 'themeGoldHex');
   bindColorPair('themeDanger', 'themeDangerHex');
   bindColorPair('themeSuccess', 'themeSuccessHex');
 
-  // ─── Ángulo ───
   const angleInp = document.getElementById('themeAngle');
   const angleVal = document.getElementById('themeAngleVal');
   if (angleInp && angleVal) {
@@ -757,10 +747,8 @@ function bindThemeTab(){
     });
   }
 
-  // ─── Stops de gradiente ───
   bindGradientStops();
 
-  // ─── Añadir stop ───
   document.getElementById('themeAddStop')?.addEventListener('click', () => {
     const list = document.getElementById('themeGradientStops');
     if (!list) return;
@@ -773,7 +761,6 @@ function bindThemeTab(){
     div.innerHTML = renderGradientStopRow(lastColor, newIndex, count + 1);
     const row = div.firstElementChild;
 
-    // Actualizar el botón de eliminar de las filas anteriores
     list.querySelectorAll('.theme-stop-row').forEach((r, i) => {
       if (!r.querySelector('[data-stop-remove]')) {
         const btn = document.createElement('button');
@@ -789,14 +776,12 @@ function bindThemeTab(){
     list.appendChild(row);
     bindGradientStops();
 
-    // Desactivar botón si llegamos a 5
     const btn = document.getElementById('themeAddStop');
     if (list.querySelectorAll('.theme-stop-row').length >= 5 && btn) btn.disabled = true;
 
     applyThemePreview();
   });
 
-  // ─── Subir logo ───
   const logoInput = document.getElementById('themeLogoInput');
   document.getElementById('themeLogoUpload')?.addEventListener('click', () => logoInput?.click());
   document.getElementById('themeLogoDrop')?.addEventListener('click', (e) => {
@@ -818,7 +803,6 @@ function bindThemeTab(){
     }
   });
 
-  // ─── Quitar logo ───
   document.getElementById('themeLogoRemove')?.addEventListener('click', (e) => {
     e.stopPropagation();
     window.__themeEditingLogo = '';
@@ -828,12 +812,10 @@ function bindThemeTab(){
     toast('Logo quitado. No olvides guardar.', 'info');
   });
 
-  // ─── Reset a default ───
   document.getElementById('themeReset')?.addEventListener('click', () => {
     if (!confirm('¿Restaurar todos los valores por defecto del tema?')) return;
     const def = getDefaultTheme();
     window.__themeEditingLogo = def.logo || '';
-    // Repintar el tab con el default
     const db2 = getDB();
     const fake = { ...db2, config: { ...db2.config, theme: { active: def, presets: db2.config.theme?.presets || [] } } };
     document.getElementById('configContent').innerHTML = renderThemeTab(fake);
@@ -842,7 +824,6 @@ function bindThemeTab(){
     toast('Tema restaurado (sin guardar)', 'info');
   });
 
-  // ─── Guardar y aplicar ───
   document.getElementById('themeSave')?.addEventListener('click', () => {
     try {
       const t = readThemeForm();
@@ -850,7 +831,6 @@ function bindThemeTab(){
 
       mutate(d => {
         d.config.theme ||= { active: getDefaultTheme(), presets: [] };
-        // Preservar el nombre si el tema era un preset aplicado
         const prevName = d.config.theme.active?.name;
         d.config.theme.active = t;
         if (prevName && prevName !== 'Zenith Default') t.name = prevName;
@@ -862,7 +842,6 @@ function bindThemeTab(){
       toast('✅ Tema guardado y aplicado. Se publicará automáticamente.', 'success');
       logChange('update', 'theme', null, 'Tema actualizado');
 
-      // Repintar la lista de presets (por si acaso)
       const db2 = getDB();
       document.getElementById('configContent').innerHTML = renderThemeTab(db2);
       bindThemeTab();
@@ -872,7 +851,6 @@ function bindThemeTab(){
     }
   });
 
-  // ─── Guardar como preset ───
   document.getElementById('themeSaveAsPreset')?.addEventListener('click', () => {
     const presets = getDB().config.theme?.presets || [];
     if (presets.length >= 10) {
@@ -929,7 +907,6 @@ function bindThemeTab(){
     });
   });
 
-  // ─── Exportar tema ───
   document.getElementById('themeExport')?.addEventListener('click', () => {
     try {
       const t = readThemeForm();
@@ -941,15 +918,12 @@ function bindThemeTab(){
     }
   });
 
-  // ─── Importar tema ───
   document.getElementById('themeImport')?.addEventListener('change', async (e) => {
     const f = e.target.files[0];
     if (!f) return;
     try {
       const imported = await importTheme(f);
-      // Aplicar como preview
       window.__themeEditingLogo = imported.logo || '';
-      // Repintar el tab con el tema importado
       const db2 = getDB();
       const fake = { ...db2, config: { ...db2.config, theme: { active: imported, presets: db2.config.theme?.presets || [] } } };
       document.getElementById('configContent').innerHTML = renderThemeTab(fake);
@@ -960,10 +934,9 @@ function bindThemeTab(){
       console.error(err);
       toast('Error al importar: ' + err.message, 'error');
     }
-    e.target.value = ''; // reset input
+    e.target.value = '';
   });
 
-  // ─── Presets: aplicar / eliminar / exportar ───
   document.querySelectorAll('[data-preset-apply]').forEach(btn => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.presetApply;
@@ -1011,7 +984,6 @@ function bindThemeTab(){
   });
 }
 
-// Auxiliar: bindea un par color-input ↔ text-hex
 function bindColorPair(colorId, hexId){
   const colorInp = document.getElementById(colorId);
   const hexInp = document.getElementById(hexId);
@@ -1029,9 +1001,7 @@ function bindColorPair(colorId, hexId){
   });
 }
 
-// Auxiliar: bindea los stops del gradiente (color ↔ hex, eliminar)
 function bindGradientStops(){
-  // Los listeners se añaden una sola vez por fila usando un flag
   document.querySelectorAll('.theme-stop-color').forEach(inp => {
     if (inp.dataset.bound === '1') return;
     inp.dataset.bound = '1';
@@ -1064,7 +1034,6 @@ function bindGradientStops(){
       if (rows.length <= 2) return;
       const idx = +btn.dataset.stopRemove;
       rows[idx]?.remove();
-      // Reindexar
       list.querySelectorAll('.theme-stop-row').forEach((row, i) => {
         row.dataset.stopIndex = i;
         const c = row.querySelector('.theme-stop-color');
@@ -1074,7 +1043,6 @@ function bindGradientStops(){
         const rm = row.querySelector('[data-stop-remove]');
         if (rm) rm.dataset.stopRemove = i;
       });
-      // Reactivar botón de añadir
       const addBtn = document.getElementById('themeAddStop');
       if (addBtn) addBtn.disabled = list.querySelectorAll('.theme-stop-row').length >= 5;
       applyThemePreview();
@@ -1556,7 +1524,15 @@ function renderAI(ai){
         <button type="button" class="btn btn-sm" id="aiResetPrompt">↩ Restaurar prompt por defecto</button>
       </div>
       <div class="field"><textarea class="textarea" id="aiPrompt" rows="14">${ai.systemPrompt||''}</textarea></div>
-      <div style="display:flex;gap:8px;margin-top:8px">
+      
+      <div style="margin-top:18px; padding-top:18px; border-top:1px solid var(--border-soft)">
+        <button class="btn btn-primary" id="btnGenerateTournament" style="width:100%; padding:14px; font-size:14px; letter-spacing:.1em;">
+          🎲 GENERAR TORNEO CON IA
+        </button>
+        <p class="field-hint" style="text-align:center; margin-top:10px;">Extrae equipos desde una imagen o texto, y asigna escudos automáticamente.</p>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:18px">
         <button class="btn" id="aiTest">PROBAR CONEXIÓN</button>
         <button class="btn btn-primary" id="aiSave">GUARDAR IA</button>
       </div>
@@ -1959,6 +1935,15 @@ export function bindConfigEvents(){
     toast('Base restaurada','success');
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   });
+
+  // --- IA TOURNAMENT WIZARD ---
+  document.getElementById('btnGenerateTournament')?.addEventListener('click', () => {
+    const db = getDB();
+    if(!db.config.ai.apiKey) {
+      return toast('⚠ Configura primero la API Key de Gemini.', 'error');
+    }
+    AITournamentWizard.open();
+  });
 }
 
 // ============================================================
@@ -2168,3 +2153,777 @@ function compressImage(file, maxW, maxH){
 function esc(str){
   return String(str ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
 }
+
+// ============================================================
+// AI TOURNAMENT WIZARD
+// ============================================================
+const AITournamentWizard = {
+  state: {
+    step: 1,
+    mode: 'image', // 'image' | 'text'
+    imageFile: null,
+    textContent: '',
+    actionType: 'append', // 'append' | 'replace'
+    teams: [], // { tempId, name, originalName, tag, coach, logo, filename, assignedLogoIndex }
+    corrections: [],
+    warnings: [],
+    logosPool: [], // { index, base64, type, filename, assignedTo }
+    targetDivisionId: null
+  },
+
+  open() {
+    this.state = {
+      step: 1,
+      mode: 'image',
+      imageFile: null,
+      textContent: '',
+      actionType: 'append',
+      teams: [],
+      corrections: [],
+      warnings: [],
+      logosPool: [],
+      targetDivisionId: state.divisionId || getDB().divisions[0]?.id
+    };
+
+    openModal({
+      id: 'ai-tournament-wizard',
+      title: '🎲 GENERAR TORNEO CON IA',
+      wide: true,
+      body: `<div id="aiWizardBody"></div>`,
+      footer: `<div id="aiWizardFooter" style="display:flex;justify-content:space-between;width:100%"></div>`,
+      onMount: (root) => {
+        this.root = root;
+        this.render();
+      }
+    });
+  },
+
+  render() {
+    const body = this.root.querySelector('#aiWizardBody');
+    const footer = this.root.querySelector('#aiWizardFooter');
+    
+    // Renderizar pasos
+    body.innerHTML = `
+      <div class="ai-wizard-steps">
+        <div class="ai-wizard-step ${this.state.step === 1 ? 'active' : this.state.step > 1 ? 'done' : ''}">1. Entrada</div>
+        <div class="ai-wizard-step ${this.state.step === 2 ? 'active' : this.state.step > 2 ? 'done' : ''}">2. Equipos</div>
+        <div class="ai-wizard-step ${this.state.step === 3 ? 'active' : this.state.step > 3 ? 'done' : ''}">3. Escudos</div>
+        <div class="ai-wizard-step ${this.state.step === 4 ? 'active' : this.state.step > 4 ? 'done' : ''}">4. Confirmar</div>
+        <div class="ai-wizard-step ${this.state.step === 5 ? 'active' : ''}">5. Clasificación</div>
+      </div>
+      <div id="aiWizardStepContent"></div>
+    `;
+
+    const content = this.root.querySelector('#aiWizardStepContent');
+
+    if (this.state.step === 1) {
+      this.renderStep1(content, footer);
+    } else if (this.state.step === 2) {
+      this.renderStep2(content, footer);
+    } else if (this.state.step === 3) {
+      this.renderStep3(content, footer);
+    } else if (this.state.step === 4) {
+      this.renderStep4(content, footer);
+    } else if (this.state.step === 5) {
+      this.renderStep5(content, footer);
+    }
+  },
+
+  // ============================================================
+  // PASO 1: ENTRADA
+  // ============================================================
+  renderStep1(content, footer) {
+    const div = getDB().divisions.find(d => d.id === this.state.targetDivisionId);
+    
+    content.innerHTML = `
+      <p style="font-size:13px;color:var(--silver);margin-bottom:16px;">
+        La IA extraerá los equipos de la imagen o texto y los creará en la división <b>${esc(div?.name || 'activa')}</b>.
+      </p>
+
+      <div class="ai-tabs">
+        <button class="ai-tab ${this.state.mode === 'image' ? 'active' : ''}" id="tabModeImage">🖼 Captura de Imagen</button>
+        <button class="ai-tab ${this.state.mode === 'text' ? 'active' : ''}" id="tabModeText">📝 Texto o TXT</button>
+      </div>
+
+      <div id="modeImageWrap" style="display:${this.state.mode === 'image' ? '' : 'none'}">
+        <div class="ai-dropzone-large" id="dropImageZone">
+          <div style="font-size:32px;margin-bottom:10px;">📸</div>
+          <div style="font-size:14px;font-weight:600;color:var(--silver-light);margin-bottom:4px;">Arrastra una captura aquí o haz click</div>
+          <div style="font-size:12px;">También puedes pegar con <kbd style="background:var(--bg-elev);padding:2px 6px;border-radius:4px;border:1px solid var(--border)">Ctrl + V</kbd></div>
+        </div>
+        <input type="file" id="fileImageInput" accept="image/*" hidden>
+        ${this.state.imageFile ? `<div style="margin-top:10px;font-size:12px;color:var(--success)">✅ Imagen cargada: ${this.state.imageFile.name}</div>` : ''}
+      </div>
+
+      <div id="modeTextWrap" style="display:${this.state.mode === 'text' ? '' : 'none'}">
+        <div class="field">
+          <label>Pega la lista de equipos (uno por línea, o separados por comas)</label>
+          <textarea class="textarea" id="textInput" rows="8" placeholder="Tigres&#10;América&#10;Cruz Azul&#10;...">${esc(this.state.textContent)}</textarea>
+        </div>
+        <div class="ai-dropzone-large" id="dropTxtZone" style="padding:20px;margin-top:10px;">
+          <div style="font-size:12px;">O arrastra un archivo <b>.txt</b> aquí</div>
+        </div>
+        <input type="file" id="fileTxtInput" accept=".txt" hidden>
+      </div>
+
+      <div class="field" style="margin-top:20px;">
+        <label>¿Qué hacer con los equipos existentes?</label>
+        <div style="display:flex;gap:16px;margin-top:6px;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--silver-light);cursor:pointer;">
+            <input type="radio" name="wizAction" value="append" ${this.state.actionType === 'append' ? 'checked' : ''}> Añadir a los actuales
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--silver-light);cursor:pointer;">
+            <input type="radio" name="wizAction" value="replace" ${this.state.actionType === 'replace' ? 'checked' : ''}> Reemplazar todos
+          </label>
+        </div>
+      </div>
+    `;
+
+    footer.innerHTML = `
+      <button class="btn btn-ghost" data-close>CANCELAR</button>
+      <button class="btn btn-primary" id="btnAnalyzeStep1">ANALIZAR →</button>
+    `;
+
+    // Event Listeners
+    const tabImg = content.querySelector('#tabModeImage');
+    const tabTxt = content.querySelector('#tabModeText');
+    tabImg.addEventListener('click', () => { this.state.mode = 'image'; this.render(); });
+    tabTxt.addEventListener('click', () => { this.state.mode = 'text'; this.render(); });
+
+    content.querySelectorAll('input[name="wizAction"]').forEach(r => {
+      r.addEventListener('change', (e) => { this.state.actionType = e.target.value; });
+    });
+
+    // Image Input
+    const dropImage = content.querySelector('#dropImageZone');
+    const fileImage = content.querySelector('#fileImageInput');
+    dropImage.addEventListener('click', () => fileImage.click());
+    fileImage.addEventListener('change', () => {
+      if (fileImage.files[0]) { this.state.imageFile = fileImage.files[0]; this.render(); }
+    });
+    
+    // Paste Event (Ctrl+V)
+    const handlePaste = (e) => {
+      if (this.state.mode !== 'image') return;
+      const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+      for (let item of items) {
+        if (item.type.indexOf('image') !== -1) {
+          const blob = item.getAsFile();
+          this.state.imageFile = new File([blob], "pasted_image.png", { type: blob.type });
+          this.render();
+          toast('Imagen pegada desde el portapapeles', 'success');
+          e.preventDefault();
+          return;
+        }
+      }
+    };
+    document.addEventListener('paste', handlePaste);
+    this.root.dataset.pasteListener = 'active';
+    
+    // Text Input
+    const textArea = content.querySelector('#textInput');
+    if (textArea) textArea.addEventListener('input', () => { this.state.textContent = textArea.value; });
+
+    const dropTxt = content.querySelector('#dropTxtZone');
+    const fileTxt = content.querySelector('#fileTxtInput');
+    dropTxt.addEventListener('click', () => fileTxt.click());
+    dropTxt.addEventListener('dragover', e => { e.preventDefault(); dropTxt.style.borderColor = 'var(--accent)'; });
+    dropTxt.addEventListener('dragleave', () => { dropTxt.style.borderColor = 'var(--border)'; });
+    dropTxt.addEventListener('drop', e => {
+      e.preventDefault();
+      dropTxt.style.borderColor = 'var(--border)';
+      if (e.dataTransfer.files[0]) {
+        const reader = new FileReader();
+        reader.onload = ev => { this.state.textContent = ev.target.result; this.render(); };
+        reader.readAsText(e.dataTransfer.files[0]);
+      }
+    });
+    fileTxt.addEventListener('change', () => {
+      if (fileTxt.files[0]) {
+        const reader = new FileReader();
+        reader.onload = ev => { this.state.textContent = ev.target.result; this.render(); };
+        reader.readAsText(fileTxt.files[0]);
+      }
+    });
+
+    // Analizar
+    content.querySelector('#btnAnalyzeStep1').addEventListener('click', async () => {
+      if (this.state.mode === 'image' && !this.state.imageFile) return toast('Sube o pega una imagen primero', 'error');
+      if (this.state.mode === 'text' && !this.state.textContent.trim()) return toast('Escribe o pega el texto primero', 'error');
+      
+      const btn = content.querySelector('#btnAnalyzeStep1');
+      btn.disabled = true;
+      btn.textContent = 'ANALIZANDO...';
+
+      try {
+        let res;
+        if (this.state.mode === 'image') {
+          res = await AIService.generateTeamsFromImage(this.state.imageFile);
+        } else {
+          res = await AIService.generateTeamsFromText(this.state.textContent);
+        }
+
+        if (!res.teams || !Array.isArray(res.teams)) throw new Error('La IA no devolvió una lista de equipos válida.');
+
+        // Procesar equipos
+        this.state.teams = res.teams.map((t, i) => {
+          let tag = t.tag || '';
+          if (!tag) {
+            tag = t.name.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, '');
+            if (tag.length < 3) tag = t.name.substring(0, 4).toUpperCase().replace(/[^A-Z]/g, '');
+          }
+          return {
+            tempId: `tmp_${i}_${Date.now()}`,
+            name: t.name,
+            originalName: t.originalName || '',
+            tag: tag,
+            coach: t.coach || '',
+            logo: '',
+            filename: '',
+            assignedLogoIndex: null
+          };
+        });
+
+        this.state.corrections = res.corrections || [];
+        this.state.warnings = res.warnings || [];
+        this.state.step = 2;
+        this.render();
+      } catch (e) {
+        console.error(e);
+        toast('Error: ' + e.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'ANALIZAR →';
+      }
+    });
+
+    // Cleanup paste listener on close
+    if (!this.root.dataset.cleanupBound) {
+      this.root.dataset.cleanupBound = '1';
+      const origClose = closeTopModal;
+      // Nota: closeTopModal no tiene hook nativo, pero el modal padre se elimina del DOM,
+      // así que el listener queda huérfano. Es aceptable para esta sesión.
+    }
+  },
+
+  // ============================================================
+  // PASO 2: PREVIEW EQUIPOS
+  // ============================================================
+  renderStep2(content, footer) {
+    const teams = this.state.teams;
+    if (teams.length === 0) {
+      toast('No se detectaron equipos. Revisa la entrada.', 'error');
+      this.state.step = 1;
+      return this.render();
+    }
+
+    let warningsHtml = '';
+    if (this.state.warnings.length > 0) {
+      warningsHtml = `<div class="ia-warnings" style="margin-bottom:14px;">${this.state.warnings.map(w => `<div class="ia-warning-item">⚠ ${esc(w)}</div>`).join('')}</div>`;
+    }
+
+    let correctionsHtml = '';
+    if (this.state.corrections.length > 0) {
+      correctionsHtml = `
+        <div style="background:rgba(111,168,255,.06);border:1px solid rgba(111,168,255,.2);border-radius:8px;padding:12px;margin-bottom:16px;">
+          <div style="font-size:11px;letter-spacing:.1em;color:var(--accent);font-weight:600;margin-bottom:8px;">📝 CORRECCIONES ORTOGRÁFICAS</div>
+          ${this.state.corrections.map((c, i) => `
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--silver);margin-bottom:4px;">
+              <span>"${esc(c.from)}" → "${esc(c.to)}"</span>
+              <button class="btn btn-sm" data-revert-correction="${i}" style="padding:2px 6px;font-size:10px;">↺</button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    const overLimit = teams.length > 50;
+
+    content.innerHTML = `
+      ${overLimit ? `<div class="ia-warning-item" style="margin-bottom:14px;color:var(--danger);background:rgba(226,92,92,.1);border-color:rgba(226,92,92,.3);">⚠ La IA detectó ${teams.length} equipos (límite recomendado: 50). Puedes continuar, pero revisa si es correcto.</div>` : ''}
+      ${warningsHtml}
+      ${correctionsHtml}
+      
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Revisa y edita los datos antes de continuar:</div>
+      
+      <div class="table-wrap" style="max-height:400px;overflow-y:auto;border:1px solid var(--border-soft);border-radius:8px;">
+        <table class="ztable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>NOMBRE</th>
+              <th>TAG</th>
+              <th>COACH</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${teams.map((t, i) => `
+              <tr>
+                <td>${i + 1}</td>
+                <td><input class="input" style="padding:4px 8px;font-size:12px;" data-team-name="${t.tempId}" value="${esc(t.name)}"></td>
+                <td><input class="input" style="padding:4px 8px;font-size:12px;width:60px;text-transform:uppercase;" data-team-tag="${t.tempId}" value="${esc(t.tag)}" maxlength="4"></td>
+                <td><input class="input" style="padding:4px 8px;font-size:12px;" data-team-coach="${t.tempId}" value="${esc(t.coach)}"></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    footer.innerHTML = `
+      <button class="btn btn-ghost" id="btnBackStep2">← ATRÁS</button>
+      <button class="btn btn-primary" id="btnNextStep2">SIGUIENTE: ESCUDOS →</button>
+    `;
+
+    // Revertir corrección
+    content.querySelectorAll('[data-revert-correction]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = +btn.dataset.revertCorrection;
+        const c = this.state.corrections[idx];
+        const t = this.state.teams.find(x => x.name === c.to);
+        if (t) t.name = c.from;
+        this.state.corrections.splice(idx, 1);
+        this.render();
+      });
+    });
+
+    // Edición de inputs
+    content.querySelectorAll('[data-team-name]').forEach(inp => {
+      inp.addEventListener('input', e => {
+        const t = this.state.teams.find(x => x.tempId === inp.dataset.teamName);
+        if (t) t.name = e.target.value;
+      });
+    });
+    content.querySelectorAll('[data-team-tag]').forEach(inp => {
+      inp.addEventListener('input', e => {
+        const t = this.state.teams.find(x => x.tempId === inp.dataset.teamTag);
+        if (t) t.tag = e.target.value.toUpperCase();
+      });
+    });
+    content.querySelectorAll('[data-team-coach]').forEach(inp => {
+      inp.addEventListener('input', e => {
+        const t = this.state.teams.find(x => x.tempId === inp.dataset.teamCoach);
+        if (t) t.coach = e.target.value;
+      });
+    });
+
+    // Navegación
+    content.querySelector('#btnBackStep2').addEventListener('click', () => {
+      this.state.step = 1;
+      this.render();
+    });
+
+    content.querySelector('#btnNextStep2').addEventListener('click', () => {
+      // Validar nombres no vacíos
+      if (this.state.teams.some(t => !t.name.trim())) {
+        return toast('Todos los equipos deben tener un nombre', 'error');
+      }
+      this.state.step = 3;
+      this.render();
+    });
+  },
+
+  // ============================================================
+  // PASO 3: ESCUDOS
+  // ============================================================
+  renderStep3(content, footer) {
+    const teams = this.state.teams;
+    const logos = this.state.logosPool;
+    const unassignedLogos = logos.filter(l => !l.assignedTo);
+
+    content.innerHTML = `
+      <p style="font-size:13px;color:var(--silver);margin-bottom:16px;">
+        Sube todos los escudos a la vez. La IA intentará asignarlos automáticamente. Luego puedes arrastrar los que queden sueltos a su equipo.
+      </p>
+
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;">
+        <button class="btn" id="btnUploadLogos">📤 SUBIR ESCUDOS (${logos.length} subidos)</button>
+        <button class="btn btn-primary" id="btnAssignAILogos" ${logos.length === 0 ? 'disabled' : ''}>🤖 ASIGNAR CON IA</button>
+      </div>
+
+      <div id="aiAssignStatus" style="font-size:12px;color:var(--accent);margin-bottom:16px;display:none;">
+        ⏳ Asignando escudos con IA...
+      </div>
+
+      <div style="display:flex;gap:20px;">
+        <!-- Columna de Equipos -->
+        <div style="flex:2;min-width:0;">
+          <div class="reporter-subhead">EQUIPOS DETECTADOS</div>
+          <div style="max-height:300px;overflow-y:auto;padding-right:4px;">
+            ${teams.map(t => {
+              const assignedLogo = logos.find(l => l.assignedTo === t.tempId);
+              const isDoubt = t.assignedLogoIndex !== null && !assignedLogo;
+              return `
+                <div class="ai-team-logo-row" data-team-drop="${t.tempId}">
+                  <div class="ai-team-logo-drop ${assignedLogo ? 'filled' : ''}" data-drop-target="${t.tempId}">
+                    ${assignedLogo ? `<img src="data:${assignedLogo.type};base64,${assignedLogo.base64}">` : '<span>Soltar</span>'}
+                  </div>
+                  <div class="ai-team-logo-info">
+                    <div class="ai-team-logo-name">${esc(t.name)}</div>
+                    <div class="ai-team-logo-status ${assignedLogo ? 'ok' : isDoubt ? 'warn' : ''}">
+                      ${assignedLogo ? '✅ Asignado' : isDoubt ? '⚠ Dudoso' : '— Sin escudo'}
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <!-- Columna de Logos sin usar -->
+        <div style="flex:1;min-width:0;">
+          <div class="reporter-subhead">SIN ASIGNAR (${unassignedLogos.length})</div>
+          <div class="ai-logos-grid">
+            ${unassignedLogos.map(l => `
+              <div class="ai-logo-item" draggable="true" data-logo-idx="${l.index}" title="${esc(l.filename)}">
+                <img src="data:${l.type};base64,${l.base64}">
+              </div>
+            `).join('') || '<div style="grid-column:1/-1;text-align:center;font-size:11px;color:var(--muted);padding:10px;">Sube escudos para verlos aquí</div>'}
+          </div>
+        </div>
+      </div>
+    `;
+
+    footer.innerHTML = `
+      <button class="btn btn-ghost" id="btnBackStep3">← ATRÁS</button>
+      <button class="btn btn-primary" id="btnNextStep3">SIGUIENTE: CONFIRMAR →</button>
+    `;
+
+    // Subir logos
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.multiple = true;
+    fileInput.accept = 'image/*';
+    fileInput.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        if (!f.type.startsWith('image/')) continue;
+        
+        // Comprimir a base64
+        try {
+          const b64 = await compressImage(f, 256, 256);
+          const rawB64 = b64.split(',')[1];
+          this.state.logosPool.push({
+            index: this.state.logosPool.length,
+            base64: rawB64,
+            type: f.type,
+            filename: f.name,
+            assignedTo: null
+          });
+        } catch(err) { console.error('Error compressing logo', err); }
+      }
+      this.render();
+    });
+    content.querySelector('#btnUploadLogos').addEventListener('click', () => fileInput.click());
+
+    // Asignar con IA
+    content.querySelector('#btnAssignAILogos')?.addEventListener('click', async () => {
+      if (this.state.logosPool.length === 0) return;
+      
+      const btn = content.querySelector('#btnAssignAILogos');
+      const status = content.querySelector('#aiAssignStatus');
+      btn.disabled = true;
+      status.style.display = 'block';
+
+      try {
+        const res = await AIService.assignLogosToTeams(
+          this.state.teams.map(t => ({ name: t.name, tag: t.tag })),
+          this.state.logosPool
+        );
+
+        // Limpiar asignaciones previas
+        this.state.teams.forEach(t => { t.assignedLogoIndex = null; t.logo = ''; });
+        this.state.logosPool.forEach(l => { l.assignedTo = null; });
+
+        res.assignments.forEach(a => {
+          if (a.teamName) {
+            const t = this.state.teams.find(x => x.name === a.teamName);
+            if (t) {
+              t.assignedLogoIndex = a.logoIndex;
+              this.state.logosPool[a.logoIndex].assignedTo = t.tempId;
+            }
+          }
+        });
+
+        this.render();
+        toast('Asignación completada. Revisa los resultados.', 'success');
+      } catch(e) {
+        console.error(e);
+        toast('Error al asignar: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        status.style.display = 'none';
+      }
+    });
+
+    // Drag and Drop
+    let draggedLogoIdx = null;
+    content.querySelectorAll('.ai-logo-item[draggable="true"]').forEach(el => {
+      el.addEventListener('dragstart', (e) => {
+        draggedLogoIdx = +el.dataset.logoIdx;
+        e.dataTransfer.effectAllowed = 'move';
+      });
+    });
+
+    content.querySelectorAll('.ai-team-logo-drop').forEach(el => {
+      el.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        el.classList.add('dragover');
+      });
+      el.addEventListener('dragleave', () => el.classList.remove('dragover'));
+      el.addEventListener('drop', (e) => {
+        e.preventDefault();
+        el.classList.remove('dragover');
+        if (draggedLogoIdx === null) return;
+        
+        const teamId = el.dataset.dropTarget;
+        const logo = this.state.logosPool[draggedLogoIdx];
+        
+        // Desasignar si ese logo ya estaba en otro equipo
+        this.state.logosPool.forEach(l => { if (l.assignedTo === teamId) l.assignedTo = null; });
+        
+        logo.assignedTo = teamId;
+        this.render();
+        draggedLogoIdx = null;
+      });
+    });
+
+    // Navegación
+    content.querySelector('#btnBackStep3').addEventListener('click', () => {
+      this.state.step = 2;
+      this.render();
+    });
+
+    content.querySelector('#btnNextStep3').addEventListener('click', () => {
+      this.state.step = 4;
+      this.render();
+    });
+  },
+
+  // ============================================================
+  // PASO 4: CONFIRMAR
+  // ============================================================
+  renderStep4(content, footer) {
+    const teams = this.state.teams;
+    const total = teams.length;
+    const withLogo = teams.filter(t => this.state.logosPool.some(l => l.assignedTo === t.tempId)).length;
+    const withoutLogo = total - withLogo;
+    
+    const divId = this.state.targetDivisionId;
+    const db = getDB();
+    const div = db.divisions.find(d => d.id === divId);
+    const existingCount = db.teams.filter(t => t.divisionId === divId).length;
+    const isReplace = this.state.actionType === 'replace';
+
+    content.innerHTML = `
+      <div style="text-align:center;padding:10px 0 20px;">
+        <div style="font-size:48px;margin-bottom:12px;">📋</div>
+        <h3 style="font-size:18px;color:var(--silver-light);margin-bottom:8px;">RESUMEN DEL TORNEO</h3>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+        <div class="kpi"><div class="kpi-val">${total}</div><div class="kpi-lab">EQUIPOS A CREAR</div></div>
+        <div class="kpi"><div class="kpi-val">${withLogo}</div><div class="kpi-lab">CON ESCUDO</div></div>
+        <div class="kpi"><div class="kpi-val">${withoutLogo}</div><div class="kpi-lab">SIN ESCUDO</div></div>
+        <div class="kpi"><div class="kpi-val">${div?.name || '?'}</div><div class="kpi-lab">DIVISIÓN DESTINO</div></div>
+      </div>
+
+      ${isReplace && existingCount > 0 ? `
+        <div class="ia-warning-item" style="color:var(--danger);background:rgba(226,92,92,.1);border-color:rgba(226,92,92,.3);margin-bottom:16px;">
+          ⚠ <b>MODO REEMPLAZAR:</b> Se borrarán los ${existingCount} equipos actuales de esta división. Esta acción no se puede deshacer.
+        </div>
+      ` : ''}
+
+      ${withoutLogo > 0 ? `
+        <div style="background:var(--bg-graphite);border:1px solid var(--border-soft);border-radius:8px;padding:12px;margin-bottom:16px;">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Estos equipos se crearán sin escudo:</div>
+          <div style="font-size:12px;color:var(--silver);">${teams.filter(t => !this.state.logosPool.some(l => l.assignedTo === t.tempId)).map(t => esc(t.name)).join(', ')}</div>
+        </div>
+      ` : ''}
+
+      <p style="font-size:12px;color:var(--muted);text-align:center;">Al confirmar, los equipos se crearán y se publicarán automáticamente.</p>
+    `;
+
+    footer.innerHTML = `
+      <button class="btn btn-ghost" id="btnBackStep4">← ATRÁS</button>
+      <button class="btn btn-primary" id="btnCreateStep4" style="${isReplace ? 'background:var(--danger);border-color:var(--danger);' : ''}">
+        ${isReplace ? 'REEMPLAZAR Y CREAR' : 'CREAR EQUIPOS'}
+      </button>
+    `;
+
+    content.querySelector('#btnBackStep4').addEventListener('click', () => {
+      this.state.step = 3;
+      this.render();
+    });
+
+    content.querySelector('#btnCreateStep4').addEventListener('click', () => {
+      try {
+        const btn = content.querySelector('#btnCreateStep4');
+        btn.disabled = true;
+        btn.textContent = 'CREANDO...';
+
+        mutate(d => {
+          const div = d.divisions.find(x => x.id === this.state.targetDivisionId);
+          if (!div) throw new Error('División no encontrada');
+          const seasonId = d.seasons.find(s => s.active)?.id || d.seasons[0]?.id;
+
+          if (isReplace) {
+            d.teams = d.teams.filter(t => t.divisionId !== this.state.targetDivisionId);
+          }
+
+          this.state.teams.forEach(t => {
+            const assignedLogo = this.state.logosPool.find(l => l.assignedTo === t.tempId);
+            let logoDataUrl = '';
+            if (assignedLogo) {
+              logoDataUrl = `data:${assignedLogo.type};base64,${assignedLogo.base64}`;
+            }
+
+            d.teams.push({
+              id: uid('team'),
+              name: t.name,
+              tag: t.tag,
+              logo: logoDataUrl,
+              coach: t.coach,
+              divisionId: this.state.targetDivisionId,
+              seasonId: seasonId,
+              roster: [],
+              trophies: []
+            });
+          });
+        });
+
+        logChange('create', 'teams', null, `Generación IA: ${total} equipos creados en ${div?.name || '?'}`);
+        toast(`✅ ${total} equipos creados exitosamente`, 'success');
+        
+        this.state.step = 5;
+        this.render();
+
+      } catch(e) {
+        console.error(e);
+        toast('Error al crear equipos: ' + e.message, 'error');
+        content.querySelector('#btnCreateStep4').disabled = false;
+        content.querySelector('#btnCreateStep4').textContent = isReplace ? 'REEMPLAZAR Y CREAR' : 'CREAR EQUIPOS';
+      }
+    });
+  },
+
+  // ============================================================
+  // PASO 5: CLASIFICACIÓN
+  // ============================================================
+  renderStep5(content, footer) {
+    const divId = this.state.targetDivisionId;
+    const db = getDB();
+    const div = db.divisions.find(d => d.id === divId);
+    const totalTeams = db.teams.filter(t => t.divisionId === divId).length;
+
+    content.innerHTML = `
+      <div style="text-align:center;padding:10px 0 20px;">
+        <div style="font-size:48px;margin-bottom:12px;">🎉</div>
+        <h3 style="font-size:18px;color:var(--success);margin-bottom:8px;">¡EQUIPOS CREADOS!</h3>
+        <p style="font-size:13px;color:var(--silver);margin-bottom:20px;">¿Quieres configurar los slots de clasificación ahora?</p>
+      </div>
+
+      <div style="background:var(--bg-graphite);border:1px solid var(--border-soft);border-radius:8px;padding:16px;max-width:400px;margin:0 auto;">
+        <div class="field">
+          <label>PLAY-OFFS (puestos 1 al N)</label>
+          <input class="input" type="number" id="cfgPlayoffs" value="${div.config.playoffSpots || 0}" min="0" max="${totalTeams}">
+        </div>
+        <div class="field">
+          <label>PLAY-IN (puestos siguientes)</label>
+          <input class="input" type="number" id="cfgPlayin" value="${div.config.playInSpots || 0}" min="0" max="${totalTeams}">
+        </div>
+        <div class="field">
+          <label>DESCENSO (últimos N puestos)</label>
+          <input class="input" type="number" id="cfgRelegation" value="${div.config.relegation?.spots || 0}" min="0" max="${totalTeams}">
+        </div>
+        <div class="field">
+          <label>ASCENSO (primeros N de la división inferior)</label>
+          <input class="input" type="number" id="cfgPromotion" value="${div.config.promotion?.spots || 0}" min="0" max="${totalTeams}">
+        </div>
+        <div id="cfgSumWarn" style="font-size:12px;color:var(--danger);margin-top:10px;display:none;">
+          ⚠ La suma de slots supera el total de equipos (${totalTeams}).
+        </div>
+      </div>
+    `;
+
+    footer.innerHTML = `
+      <button class="btn btn-ghost" id="btnSkipStep5">AHORA NO</button>
+      <button class="btn btn-primary" id="btnSaveStep5">APLICAR CLASIFICACIÓN</button>
+    `;
+
+    const inputs = ['cfgPlayoffs', 'cfgPlayin', 'cfgRelegation', 'cfgPromotion'].map(id => content.querySelector('#'+id));
+    const warn = content.querySelector('#cfgSumWarn');
+    
+    const checkSum = () => {
+      const sum = inputs.reduce((a, i) => a + (parseInt(i.value) || 0), 0);
+      if (sum > totalTeams) {
+        warn.style.display = 'block';
+      } else {
+        warn.style.display = 'none';
+      }
+    };
+    inputs.forEach(i => i.addEventListener('input', checkSum));
+    checkSum();
+
+    content.querySelector('#btnSkipStep5').addEventListener('click', () => {
+      closeTopModal();
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+
+    content.querySelector('#btnSaveStep5').addEventListener('click', () => {
+      try {
+        const po = parseInt(content.querySelector('#cfgPlayoffs').value) || 0;
+        const pi = parseInt(content.querySelector('#cfgPlayin').value) || 0;
+        const re = parseInt(content.querySelector('#cfgRelegation').value) || 0;
+        const pr = parseInt(content.querySelector('#cfgPromotion').value) || 0;
+
+        mutate(d => {
+          const division = d.divisions.find(x => x.id === divId);
+          if (!division) return;
+
+          const zones = [];
+          let curr = 1;
+
+          if (po > 0) { zones.push({ from: curr, to: curr + po - 1, type: 'playoff', color: '#4ade80' }); curr += po; }
+          if (pi > 0) { zones.push({ from: curr, to: curr + pi - 1, type: 'playin', color: '#6FA8FF' }); curr += pi; }
+          
+          const relStart = totalTeams - re + 1;
+          if (re > 0 && relStart > curr) {
+            zones.push({ from: relStart, to: totalTeams, type: 'relegation', color: '#f87171' });
+          }
+          
+          if (pr > 0) {
+             zones.push({ from: 1, to: pr, type: 'promotion', color: '#facc15' });
+          }
+
+          // Rellenar gaps con 'none'
+          const finalZones = [];
+          let currentPos = 1;
+          zones.sort((a,b) => a.from - b.from).forEach(z => {
+             if (z.from > currentPos) {
+                finalZones.push({ from: currentPos, to: z.from - 1, type: 'none', color: 'transparent' });
+             }
+             finalZones.push(z);
+             currentPos = z.to + 1;
+          });
+          if (currentPos <= totalTeams) {
+             finalZones.push({ from: currentPos, to: totalTeams, type: 'none', color: 'transparent' });
+          }
+
+          division.config.zones = { hasTop1Highlight: true, zones: finalZones };
+          division.config.playoffSpots = po;
+          division.config.playInSpots = pi;
+          division.config.relegation = { ...division.config.relegation, enabled: re > 0, spots: re };
+          division.config.promotion = { ...division.config.promotion, enabled: pr > 0, spots: pr };
+        });
+
+        toast('Clasificación aplicada', 'success');
+        closeTopModal();
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      } catch (e) {
+        console.error(e);
+        toast('Error: ' + e.message, 'error');
+      }
+    });
+  }
+};
