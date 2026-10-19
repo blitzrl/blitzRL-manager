@@ -57,6 +57,85 @@ REGLAS GENERALES:
 - Si detectas algún problema, inclúyelo en warnings.`;
 
 // ============================================================
+// PROMPTS PARA GENERADOR DE TORNEOS
+// ============================================================
+export const DEFAULT_TEAM_PROMPT_IMAGE = `Eres un analizador experto de listas de equipos de deportes.
+Extrae TODOS los nombres de equipos visibles en la imagen.
+
+Devuelve SOLO JSON con esta estructura:
+{
+  "teams": [
+    {
+      "name": "Nombre corregido ortográficamente",
+      "originalName": "Nombre tal como apareció (si difiere)",
+      "tag": "3-4 letras (opcional)",
+      "coach": "Nombre del coach (opcional)"
+    }
+  ],
+  "corrections": [
+    { "from": "tigres", "to": "Tigres" }
+  ],
+  "warnings": ["string"]
+}
+
+Reglas:
+1. Corrige faltas de ortografía y capitalización en "name".
+2. Si corregiste, añade la entrada en "corrections" y guarda el original.
+3. No inventes equipos.
+4. Elimina duplicados.
+5. Devuelve SOLO el JSON.`;
+
+export const DEFAULT_TEAM_PROMPT_TEXT = `Eres un analizador de listas de equipos.
+El usuario te da una lista de equipos (uno por línea, o separados por comas, guiones, etc.).
+Extrae TODOS los nombres de equipos.
+
+Devuelve SOLO JSON con esta estructura:
+{
+  "teams": [
+    {
+      "name": "Nombre corregido ortográficamente",
+      "originalName": "Nombre tal como apareció (si difiere)",
+      "tag": "3-4 letras (opcional)",
+      "coach": "Nombre del coach (opcional)"
+    }
+  ],
+  "corrections": [
+    { "from": "tigres", "to": "Tigres" }
+  ],
+  "warnings": ["string"]
+}
+
+Reglas:
+1. Corrige faltas de ortografía y capitalización en "name".
+2. Si corregiste, añade la entrada en "corrections" y guarda el original.
+3. No inventes equipos.
+4. Elimina duplicados.
+5. Devuelve SOLO el JSON.`;
+
+export const DEFAULT_LOGO_PROMPT = `Eres un experto en identificación de escudos de equipos deportivos.
+Te doy:
+- Una lista de equipos: [{ name: "Tigres", tag: "TIG" }, ...]
+- Varias imágenes de escudos (una por mensaje, numeradas del 0 al N-1)
+
+Tu tarea: para cada logo, decidir a qué equipo pertenece.
+
+Devuelve SOLO JSON:
+{
+  "assignments": [
+    { "logoIndex": 0, "teamName": "Tigres", "confidence": 0.95 },
+    { "logoIndex": 1, "teamName": null, "confidence": 0.3, "note": "No coincide" }
+  ],
+  "warnings": []
+}
+
+Reglas:
+1. Solo asigna un logo a un equipo si estás seguro (confidence >= 0.7).
+2. Si no puedes identificarlo, pon teamName: null.
+3. No asignes el mismo equipo a dos logos.
+4. Analiza colores, formas, texto dentro del escudo, animales/símbolos.
+5. Devuelve SOLO el JSON.`;
+
+// ============================================================
 // TEMA POR DEFECTO
 // ============================================================
 export function getDefaultTheme(){
@@ -98,7 +177,6 @@ export function getDefaultWidgets(){
     { id:'topSaves',        instanceId:'topSaves_default',         name:'Mejores Porteros',      enabled:true,  order:11, span:1, rowSpan:1, config:{} },
     { id:'topEfficiency',   instanceId:'topEfficiency_default',    name:'Mejor Eficiencia',      enabled:true,  order:12, span:1, rowSpan:1, config:{} },
     { id:'playerSpotlight', instanceId:'playerSpotlight_default',  name:'Jugador Destacado',     enabled:true,  order:13, span:1, rowSpan:1, config:{} },
-    // NUEVOS — Fase Playoffs
     { id:'playInUpcoming',  instanceId:'playInUpcoming_default',   name:'Próximo Play-In',       enabled:false, order:14, span:1, rowSpan:1, config:{ itemIds:[], interval:5 } },
     { id:'playoffUpcoming', instanceId:'playoffUpcoming_default',  name:'Próximo Play-Off',      enabled:false, order:15, span:1, rowSpan:1, config:{ itemIds:[], interval:5 } },
     { id:'playoffBracket',  instanceId:'playoffBracket_default',   name:'Llave Play-Offs',       enabled:false, order:16, span:2, rowSpan:1, config:{} }
@@ -177,7 +255,12 @@ export function defaultDatabase(){
         apiKey: '',
         model: 'gemini-2.0-flash',
         matchThresholds: { high: 0.9, low: 0.5 },
-        systemPrompt: DEFAULT_SYSTEM_PROMPT
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        tournamentPrompts: {
+          image: DEFAULT_TEAM_PROMPT_IMAGE,
+          text: DEFAULT_TEAM_PROMPT_TEXT,
+          logos: DEFAULT_LOGO_PROMPT
+        }
       },
       theme: {
         active: getDefaultTheme(),
