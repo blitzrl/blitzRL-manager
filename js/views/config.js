@@ -2949,9 +2949,11 @@ const AITournamentWizard = {
         toast('Clasificación aplicada', 'success');
         closeTopModal();
         window.dispatchEvent(new HashChangeEvent('hashchange'));
-      } catch (e) {
+            } catch (e) {
         console.error(e);
         toast('Error: ' + e.message, 'error');
       }
     });
+  }
+};
  
