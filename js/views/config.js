@@ -2295,7 +2295,6 @@ const AITournamentWizard = {
       <button class="btn btn-primary" id="btnAnalyzeStep1">ANALIZAR →</button>
     `;
 
-    // Event Listeners
     const tabImg = content.querySelector('#tabModeImage');
     const tabTxt = content.querySelector('#tabModeText');
     if (tabImg) tabImg.addEventListener('click', () => { this.state.mode = 'image'; this.render(); });
@@ -2305,15 +2304,12 @@ const AITournamentWizard = {
       r.addEventListener('change', (e) => { this.state.actionType = e.target.value; });
     });
 
-    // Image Input + Drag & Drop + Paste
     if (this.state.mode === 'image') {
       const dropImage = content.querySelector('#dropImageZone');
       const fileImage = content.querySelector('#fileImageInput');
       
       if (dropImage && fileImage) {
         dropImage.addEventListener('click', () => fileImage.click());
-        
-        // Drag & Drop
         dropImage.addEventListener('dragover', (e) => {
           e.preventDefault();
           dropImage.classList.add('dragover');
@@ -2338,7 +2334,6 @@ const AITournamentWizard = {
         });
       }
 
-      // Paste Listener (limpiamos el anterior si existía)
       this._cleanup();
       this._pasteHandler = (e) => {
         if (this.state.mode !== 'image') return;
@@ -2357,11 +2352,9 @@ const AITournamentWizard = {
       document.addEventListener('paste', this._pasteHandler);
     }
 
-    // Text Input
     if (this.state.mode === 'text') {
       const textArea = content.querySelector('#textInput');
       if (textArea) {
-        // Guardar lo que haya antes de re-renderizar
         textArea.addEventListener('input', () => { this.state.textContent = textArea.value; });
       }
 
@@ -2392,7 +2385,6 @@ const AITournamentWizard = {
       }
     }
 
-    // Analizar — Buscamos en footer porque está ahí
     const btnAnalyze = footer.querySelector('#btnAnalyzeStep1');
     if (btnAnalyze) {
       btnAnalyze.addEventListener('click', async () => {
@@ -2433,7 +2425,7 @@ const AITournamentWizard = {
           this.state.corrections = res.corrections || [];
           this.state.warnings = res.warnings || [];
           this.state.step = 2;
-          this._cleanup(); // Limpiar listener de paste
+          this._cleanup();
           this.render();
         } catch (e) {
           console.error(e);
@@ -2514,7 +2506,6 @@ const AITournamentWizard = {
       <button class="btn btn-primary" id="btnNextStep2">SIGUIENTE: ESCUDOS →</button>
     `;
 
-    // Revertir corrección
     content.querySelectorAll('[data-revert-correction]').forEach(btn => {
       btn.addEventListener('click', () => {
         const idx = +btn.dataset.revertCorrection;
@@ -2526,7 +2517,6 @@ const AITournamentWizard = {
       });
     });
 
-    // Edición de inputs
     content.querySelectorAll('[data-team-name]').forEach(inp => {
       inp.addEventListener('input', e => {
         const t = this.state.teams.find(x => x.tempId === inp.dataset.teamName);
@@ -2546,7 +2536,6 @@ const AITournamentWizard = {
       });
     });
 
-    // Navegación (footer)
     footer.querySelector('#btnBackStep2')?.addEventListener('click', () => {
       this.state.step = 1;
       this.render();
@@ -2625,7 +2614,6 @@ const AITournamentWizard = {
       <button class="btn btn-primary" id="btnNextStep3">SIGUIENTE: CONFIRMAR →</button>
     `;
 
-    // Subir logos
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.multiple = true;
@@ -2651,7 +2639,6 @@ const AITournamentWizard = {
     });
     content.querySelector('#btnUploadLogos')?.addEventListener('click', () => fileInput.click());
 
-    // Asignar con IA
     content.querySelector('#btnAssignAILogos')?.addEventListener('click', async () => {
       if (this.state.logosPool.length === 0) return;
       
@@ -2690,7 +2677,6 @@ const AITournamentWizard = {
       }
     });
 
-    // Drag and Drop
     let draggedLogoIdx = null;
     content.querySelectorAll('.ai-logo-item[draggable="true"]').forEach(el => {
       el.addEventListener('dragstart', (e) => {
@@ -2721,7 +2707,6 @@ const AITournamentWizard = {
       });
     });
 
-    // Navegación (footer)
     footer.querySelector('#btnBackStep3')?.addEventListener('click', () => {
       this.state.step = 2;
       this.render();
@@ -2784,7 +2769,6 @@ const AITournamentWizard = {
       </button>
     `;
 
-    // Navegación (footer)
     footer.querySelector('#btnBackStep4')?.addEventListener('click', () => {
       this.state.step = 3;
       this.render();
@@ -2894,7 +2878,6 @@ const AITournamentWizard = {
     inputs.forEach(i => i && i.addEventListener('input', checkSum));
     checkSum();
 
-    // Navegación (footer)
     footer.querySelector('#btnSkipStep5')?.addEventListener('click', () => {
       closeTopModal();
       window.dispatchEvent(new HashChangeEvent('hashchange'));
@@ -2949,11 +2932,10 @@ const AITournamentWizard = {
         toast('Clasificación aplicada', 'success');
         closeTopModal();
         window.dispatchEvent(new HashChangeEvent('hashchange'));
-            } catch (e) {
+      } catch (e) {
         console.error(e);
         toast('Error: ' + e.message, 'error');
       }
     });
   }
 };
- 
