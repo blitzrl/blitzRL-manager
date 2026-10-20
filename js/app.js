@@ -19,15 +19,14 @@ import { playoffsView, bindPlayoffsEvents } from './views/playoffs.js';
 import { configView, bindConfigEvents } from './views/config.js';
 import { ballonDorView, bindBallonDorEvents } from './views/ballonDor.js';
 import { marketView, bindMarketEvents } from './views/market.js';
+import { performanceView, bindPerformanceEvents } from './views/performance.js'; // NUEVO
 
 window.addEventListener('error', e => console.error('[ZENITH] error:', e.error || e.message));
 window.addEventListener('unhandledrejection', e => console.error('[ZENITH] promise rejected:', e.reason));
 
-// Exponer hooks al window para storage.js
 window.__zenithCaptureHashes = captureCurrentHashes;
 window.__zenithNotifyChange = notifyChange;
 
-// Flag anti-doble-descarga
 window.__zenithHasDownloadedThisSession = false;
 
 // ============================================================
@@ -105,7 +104,7 @@ function confirmDiscardChanges(count){
 }
 
 // ============================================================
-// DESCARGA INICIAL (llamada desde boot y desde login)
+// DESCARGA INICIAL
 // ============================================================
 export async function performInitialDownload(opts = {}){
   const { skipConfirm = false, reason = 'boot' } = opts;
@@ -140,7 +139,6 @@ export async function performInitialDownload(opts = {}){
 
     setRawDB(merged);
 
-    // ✅ Aplicar tema tras descarga
     try {
       const themeActive = getDB().config?.theme?.active;
       applyTheme(themeActive);
@@ -186,7 +184,6 @@ async function boot(){
     loadDB();
     loadActiveDivision();
 
-    // ✅ Aplicar tema al arrancar
     try {
       const themeActive = getDB().config?.theme?.active;
       applyTheme(themeActive);
@@ -239,6 +236,7 @@ registerRoute('playoffs',  playoffsView);
 registerRoute('config',    configView);
 registerRoute('ballonDor', ballonDorView);
 registerRoute('market',    marketView);
+registerRoute('performance', performanceView); // NUEVO
 
 // ============================================================
 // RENDER
@@ -262,6 +260,7 @@ function renderView(viewFn, params){
     safeBind(bindPlayersEvents);
     safeBind(bindBallonDorEvents);
     safeBind(bindMarketEvents);
+    safeBind(bindPerformanceEvents); // NUEVO
 
     updateActiveNav();
     updateDivisionHeader();
@@ -292,10 +291,8 @@ startRouter((viewFn, params) => {
   renderView(viewFn, params);
 });
 
-// Listener para re-render cuando llega sync remoto
 window.addEventListener('zenith:sync-pulled', () => {
   console.log('[APP] Datos actualizados desde Supabase (realtime)');
-  // ✅ Re-aplicar tema tras un pull remoto
   try {
     const themeActive = getDB().config?.theme?.active;
     applyTheme(themeActive);
