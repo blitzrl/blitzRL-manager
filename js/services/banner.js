@@ -3,8 +3,9 @@
 // ============================================================
 import { getDB } from './storage.js';
 
-export async function generateTransferBanner(player, fromTeam, toTeam){
-  const bg = getDB().transferBannerBg || '';
+export async function generateTransferBanner(player, fromTeam, toTeam, price){
+  const db = getDB();
+  const bg = db.transferBannerBg || '';
   const canvas = document.createElement('canvas');
   canvas.width = 1200; canvas.height = 500;
   const ctx = canvas.getContext('2d');
@@ -39,7 +40,7 @@ export async function generateTransferBanner(player, fromTeam, toTeam){
   if (shR) ctx.drawImage(shR, 910, cy - 80, 160, 160);
   else drawShieldPlaceholder(ctx, 910, cy - 80, 160, 160);
 
-  // ✅ FIX: flecha apuntando a la DERECHA (origen → destino)
+  // Flecha apuntando a la DERECHA (origen → destino)
   ctx.fillStyle = '#E6C476';
   ctx.beginPath();
   ctx.moveTo(680, cy);            // punta derecha
@@ -52,14 +53,22 @@ export async function generateTransferBanner(player, fromTeam, toTeam){
   ctx.closePath();
   ctx.fill();
 
+  // Nombre del jugador
   ctx.textAlign = 'center';
   ctx.fillStyle = '#E8EAED';
   ctx.font = 'bold 42px Rajdhani, Inter, sans-serif';
-  ctx.fillText((player.name || '?').toUpperCase(), 600, 400);
+  ctx.fillText((player.name || '?').toUpperCase(), 600, 380);
+
+  // NUEVO: Mostrar Precio
+  if (price !== undefined && price !== null) {
+    ctx.fillStyle = '#E6C476'; // Dorado
+    ctx.font = 'bold 28px Rajdhani, Inter, sans-serif';
+    ctx.fillText(`$${price.toLocaleString()}`, 600, 425);
+  }
 
   ctx.fillStyle = '#8D929A';
   ctx.font = '600 18px Rajdhani, Inter, sans-serif';
-  ctx.fillText('TRANSFER OFICIAL · ZENITH CHAMPIONSHIP', 600, 440);
+  ctx.fillText('TRANSFER OFICIAL · ZENITH CHAMPIONSHIP', 600, 465);
 
   ctx.fillStyle = '#C7CBD1';
   ctx.font = 'bold 20px Rajdhani, Inter, sans-serif';
