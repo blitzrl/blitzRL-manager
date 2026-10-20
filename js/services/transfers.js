@@ -87,6 +87,7 @@ export function doFreeAgent(playerId){
       pl.status = 'free_agent';
       pl.divisionId = null;
       pl.pendingTeamId = null;
+      // NO tocamos pl.marketValue, se mantiene.
 
       d.transferLog.push({
         id: uid('mov'), playerId, playerName: pl.name,
@@ -163,6 +164,10 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset, customPrice
       if (ft) ft.roster = (ft.roster || []).filter(r => r.playerId !== playerId);
 
       pl.divisionId = targetTeam.divisionId;
+      
+      // FIX: El precio de la transacción actualiza el valor base del jugador
+      pl.marketValue = price;
+
       if (goesPending){
         pl.status = 'pending';
         pl.pendingTeamId = targetTeamId;
