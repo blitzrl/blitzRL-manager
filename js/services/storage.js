@@ -1,7 +1,7 @@
-import { defaultDatabase, SCHEMA_VERSION, DEFAULT_ZONES, getDefaultWidgets, getDefaultTheme } from '../data/database.js';
+import { defaultDatabase, SCHEMA_VERSION, DEFAULT_ZONES, getDefaultWidgets, getDefaultTheme, ECONOMY_DEFAULTS } from '../data/database.js';
 
-const KEY = 'BLITZ_DB_V3';
-const OLD_KEYS = ['BLITZ_DB_V2', 'BLITZ_DB_V1'];
+const KEY = 'ZENITH_DB_V3';
+const OLD_KEYS = ['ZENITH_DB_V2', 'ZENITH_DB_V1'];
 let _db = null;
 let _viewCache = null;
 let _viewCacheForId = null;
@@ -63,6 +63,7 @@ function normalizePlayer(p){
   if(!Array.isArray(p.sanctions))      p.sanctions = [];
   if(!Array.isArray(p.careerSnapshots)) p.careerSnapshots = [];
   if(!Array.isArray(p.trophies))       p.trophies = [];
+  if(!Array.isArray(p.priceHistory))   p.priceHistory = []; // NUEVO
   if(p.status === undefined)           p.status = 'owned';
   if(p.pendingTeamId === undefined)    p.pendingTeamId = null;
   if(p.divisionId === undefined)       p.divisionId = null;
@@ -81,6 +82,7 @@ function normalizeTeam(t){
   if(t.coach === undefined) t.coach = '';
   if(t.divisionId === undefined) t.divisionId = null;
   if(t.seasonId === undefined)   t.seasonId = null;
+  if(t.money === undefined)      t.money = 0; // NUEVO
 }
 
 function normalizeNews(n){
@@ -145,9 +147,7 @@ function migrateTheme(db){
   if (!db.config.theme.active || typeof db.config.theme.active !== 'object') {
     db.config.theme.active = defaults;
   }
-  // Rellenar campos faltantes en active
   db.config.theme.active = deepMerge(defaults, db.config.theme.active);
-  // Asegurar array de presets
   if (!Array.isArray(db.config.theme.presets)) {
     db.config.theme.presets = [];
   }
@@ -191,6 +191,7 @@ function migrate(db){
   db.transferLog   ||= [];
   db.trophyHistory ||= [];
   db.trophies      ||= {};
+  db.economyLedger ||= []; // NUEVO
   if(db.transferBannerBg === undefined) db.transferBannerBg = '';
 
   if(!Array.isArray(db.archivedSeasons)) db.archivedSeasons = [];
@@ -201,6 +202,15 @@ function migrate(db){
   db.config.pigWeights  ||= { goal:2.0, assist:1.5, save:1.0, missDivisor:5 };
   db.config.badStreak   ||= { enabled:true, minGames:5, consecutiveLosses:3, penalty:0.10 };
   db.config.seasonEnd   ||= { autoAssignTrophies:true, requireAllDivisions:true };
+  
+  // NUEVO: Inyectar economía por defecto si no existe
+  if (!db.config.economy) {
+    db.config.economy = JSON.parse(JSON.stringify(ECONOMY_DEFAULTS));
+  } else {
+    // Asegurar que si hay economía, no falten las nuevas llaves si actualizamos en el futuro
+    db.config.economy = deepMerge(ECONOMY_DEFAULTS, db.config.economy);
+  }
+
   db.config.ai          ||= defaultDatabase().config.ai;
   if(db.config.ai.model === 'gemini-1.5-flash'){
     db.config.ai.model = 'gemini-2.0-flash';
@@ -278,13 +288,15 @@ function migrateSnapshot(snapshot, liveDB){
   s.transferLog ||= [];
   s.trophyHistory ||= [];
   s.trophies ||= {};
+  s.economyLedger ||= [];
   s.transferBannerBg ||= '';
 
   s.config ||= JSON.parse(JSON.stringify(liveDB.config));
   if(!s.config.seasonEnd) s.config.seasonEnd = { autoAssignTrophies:true, requireAllDivisions:true };
   if(!s.config.ai) s.config.ai = JSON.parse(JSON.stringify(liveDB.config.ai));
-  // El tema siempre viene del liveDB (no se archiva con el snapshot)
+  
   s.config.theme = JSON.parse(JSON.stringify(liveDB.config.theme || { active: getDefaultTheme(), presets: [] }));
+  s.config.economy = JSON.parse(JSON.stringify(liveDB.config.economy || ECONOMY_DEFAULTS));
 
   s.widgets = liveDB.widgets;
   s.archivedSeasons = liveDB.archivedSeasons;
@@ -383,14 +395,12 @@ export function mutate(fn){
   try { snapshot = JSON.stringify(db); }
   catch(e){ console.error('[ZENITH] DB corrupta, no se puede snapshot:', e); }
 
-  // Capturar hashes ANTES
   const oldHashes = window.__zenithCaptureHashes ? window.__zenithCaptureHashes() : null;
 
   try {
     fn(db);
     persist();
 
-    // Detectar cambios y notificar al sync
     try {
       if (oldHashes && window.__zenithNotifyChange) {
         const newHashes = window.__zenithCaptureHashes ? window.__zenithCaptureHashes() : null;
@@ -464,6 +474,5 @@ export function resetDB(){
   persist();
 }
 
-// Exponer al window para sync
 window.__zenithGetRawDB = getRawDB;
 window.__zenithSetRawDB = setRawDB;
