@@ -1,7 +1,7 @@
 import { getDB } from '../services/storage.js';
 import { aggregatePlayerStats, computeRankings } from '../services/statistics.js';
 import { streakLabel } from '../services/pig.js';
-import { getNationFlag, getNationName, platformIcon, getRankColor, getRankLabel } from '../data/nations.js';
+import { getNationFlag, getNationName, platformIcon, getRankColor, getRankLabel } from '../data/nations.js'; // FIX: getRankLabel
 import { openPlayerForm } from './teams.js';
 import { openModal } from '../services/ui.js';
 import { renderVitrina } from '../services/trophies.js';
@@ -120,7 +120,6 @@ function playerRow(p, i, allStats){
   const rankLine = getRankLabel(p.rank, p.rankLevel, p.rankDivision);
   const trophies = p.trophies || [];
   
-  // FIX: Determinar si es agente libre para el badge visual
   const isFreeAgent = p.status === 'free_agent' || (!s.teamId);
 
   return `<tr style="cursor:pointer" data-player-profile="${p.id}">
@@ -143,16 +142,13 @@ function playerRow(p, i, allStats){
   </tr>`;
 }
 
-// ============================================================
-// PERFIL
-// ============================================================
 function playerProfileView(p){
   const db = getDB();
   const allStats = aggregatePlayerStats();
   const stats = allStats.find(s => s.id === p.id) || { games:0, goals:0, assists:0, saves:0, shots:0, pig:0, efficiency:0, efficiencyOffense:0, efficiencyDefense:0, goalsPerMatch:0, assistsPerMatch:0, savesPerMatch:0, shotsPerMatch:0, pigTrend:'—' };
   
   const rankings = computeRankings(allStats);
-  const streak = streakLabel(stats); // Usa stats (que tiene winStreak y lossStreak actualizados)
+  const streak = streakLabel(stats); 
   const flag = p.nationalityCode ? getNationFlag(p.nationalityCode) : '';
   const nationName = p.nationalityCode ? getNationName(p.nationalityCode) : '';
   const rankColor = getRankColor(p.rank, p.rankLevel);
@@ -172,7 +168,6 @@ function playerProfileView(p){
   const rankOf = (map) => map?.get(p.id) || '—';
   const totalRanked = rankings.total || 1;
 
-  // FIX: Lógica de Rachas y Badges
   let streakBadge = '';
   if (stats.winStreak >= 3) {
     streakBadge = `<span class="badge badge-win" style="font-size:12px;padding:4px 10px;">🔥 RACHA POSITIVA (${stats.winStreak})</span>`;
@@ -180,11 +175,9 @@ function playerProfileView(p){
     streakBadge = `<span class="badge badge-loss" style="font-size:12px;padding:4px 10px;">📉 MALA RACHA (${stats.lossStreak})</span>`;
   }
   
-  // FIX: Determinar si es agente libre
   const isFreeAgent = p.status === 'free_agent' || !stats.teamId || stats.teamId === 'null';
   const teamDisplay = isFreeAgent ? '<span style="color:var(--gold)">AGENTE LIBRE</span>' : esc(stats.teamName || 'Agente libre');
 
-  // FIX: Trend calculado con pigHistory
   const trendSymbol = stats.pigTrend || '—';
 
   return `
