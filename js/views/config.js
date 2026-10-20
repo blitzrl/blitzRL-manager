@@ -1060,6 +1060,7 @@ function renderEconomyTab(db){
   const eco = db.config.economy || ECONOMY_DEFAULTS;
   const RANKS = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Champion', 'Grand Champion', 'SSL'];
   const ledger = db.economyLedger || [];
+  const recentLedger = ledger.slice(0, 15);
 
   return `
     <div class="grid grid-2">
@@ -1206,8 +1207,8 @@ function renderEconomyTab(db){
 
     <div class="card" style="margin-top:18px">
       <div class="card-header">
-        <div class="card-title"><span class="dot">◆</span>HOJA CONTABLE (ÚLTIMOS MOVIMIENTOS)</div>
-        <button class="btn btn-sm" id="exportLedgerBtn">⬇ EXPORTAR TXT</button>
+        <div class="card-title"><span class="dot">◆</span>HOJA CONTABLE (ÚLTIMOS 15 MOVIMIENTOS)</div>
+        <button class="btn btn-sm" id="exportLedgerBtn">⬇ EXPORTAR TXT COMPLETO</button>
       </div>
       <div class="table-wrap" style="max-height:400px;overflow-y:auto">
         <table class="ztable">
@@ -1221,7 +1222,7 @@ function renderEconomyTab(db){
             </tr>
           </thead>
           <tbody>
-            ${ledger.slice(0, 50).map(item => {
+            ${recentLedger.map(item => {
               const date = new Date(item.ts).toLocaleString();
               const isPositive = item.amount >= 0;
               const typeLabels = {
@@ -2479,7 +2480,7 @@ function esc(str){
 }
 
 // ============================================================
-// AI TOURNAMENT WIZARD
+// AI TOURNAMENT WIZARD (SIN CAMBIOS)
 // ============================================================
 const AITournamentWizard = {
   state: {
