@@ -6,6 +6,7 @@ import { openPlayerForm } from './teams.js';
 import { openModal } from '../services/ui.js';
 import { renderVitrina } from '../services/trophies.js';
 import { state } from '../state.js';
+import { calculatePlayerPrice } from '../services/economy.js'; // NUEVO
 
 export function playersView(params = []){
   const db = getDB();
@@ -158,6 +159,9 @@ function playerProfileView(p){
   const trendColor = { '▲':'var(--success)', '▼':'var(--danger)', '—':'var(--muted)' };
   const trophies = p.trophies || [];
 
+  // ECONOMÍA: Calcular precio
+  const priceData = calculatePlayerPrice(p, stats, db.config.economy);
+
   let divId = p.divisionId;
   if(!divId){
     const t = db.teams.find(t => (t.roster || []).some(r => r.playerId === p.id));
@@ -202,6 +206,23 @@ function playerProfileView(p){
             <span style="color:${trendColor[stats.pigTrend||'—']};font-size:22px;vertical-align:super">${stats.pigTrend||'—'}</span>
           </div>
           <div style="font-size:10px;color:var(--muted)">Rank #${rankOf(rankings.pig)} de ${totalRanked}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NUEVO: CARD DE VALOR DE MERCADO -->
+    <div class="card" style="margin-top:18px;border-left:4px solid var(--gold)">
+      <div class="card-header">
+        <div class="card-title" style="color:var(--gold)"><span class="dot" style="color:var(--gold)">◆</span>VALOR DE MERCADO</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div style="font-size:13px;color:var(--muted);line-height:1.6">
+          <div>Precio base (${priceData.rank} ${priceData.level}): <b style="color:var(--silver-light)">$${priceData.basePrice.toLocaleString()}</b></div>
+          <div>Ajuste por PIG (${priceData.pig > 0 ? '+' : ''}${priceData.pig.toFixed(1)} × $${db.config.economy.pigMultiplier}): <b style="color:${priceData.pigAdjustment >= 0 ? 'var(--success)' : 'var(--danger)'}">${priceData.pigAdjustment >= 0 ? '+' : ''}$${priceData.pigAdjustment.toLocaleString()}</b></div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:11px;letter-spacing:.1em;color:var(--muted)">VALOR TOTAL</div>
+          <div style="font-family:var(--font-display);font-size:32px;color:var(--gold);line-height:1">$${priceData.price.toLocaleString()}</div>
         </div>
       </div>
     </div>
