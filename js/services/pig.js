@@ -1,3 +1,7 @@
+// ============================================================
+// PIG — GESTOR (Manager)
+// Cálculo de PIG, Tendencias, Eficiencia y Rachas
+// ============================================================
 import { getDB } from './storage.js';
 import { ECONOMY_DEFAULTS } from '../data/database.js';
 
@@ -20,18 +24,22 @@ export function calculatePIG(stats){
 
   let pig = base - penalty;
 
+  // Manejo de PIG Negativo
   if (eco.pigAllowNegative) {
+    // 1. Penalización por inactividad ofensiva
     const offContribution = (stats.goals || 0) + (stats.assists || 0);
     if (stats.games > 0 && offContribution === 0) {
-      pig -= 2 * Math.min(stats.games, 5);
+      pig -= 2 * Math.min(stats.games, 5); 
     }
 
+    // 2. Penalización por tiros fallados
     const missedShots = Math.max(0, (stats.shots || 0) - (stats.goals || 0));
     if (missedShots > 0) {
       const shotPenalty = missedShots * (eco.missedShotsPenalty ?? 0.5);
       pig -= shotPenalty;
     }
 
+    // 3. Aplicar el piso (Floor)
     pig = Math.max(eco.pigNegativeFloor ?? -25, +pig.toFixed(2));
   } else {
     pig = Math.max(0, +pig.toFixed(2));
@@ -43,6 +51,7 @@ export function calculatePIG(stats){
 export function calculateTrend(player) {
   const history = player?.pigHistory || [];
   if (history.length < 2) return '—';
+  
   const recent = history.slice(-5);
   const avgRecent = recent.reduce((a, b) => a + b, 0) / recent.length;
   const current = history[history.length - 1];
@@ -61,8 +70,10 @@ export function streakLabel(stats){
   const db = getDB();
   const bs = db.config.badStreak;
   if(!bs.enabled) return { label: 'NEUTRA', cls: '' };
+  
   if(stats.winStreak >= 3) return { label: 'RACHA POSITIVA', cls: 'badge-win' };
   if(stats.lossStreak >= bs.consecutiveLosses) return { label: 'MALA RACHA', cls: 'badge-loss' };
+  
   return { label: 'NEUTRA', cls: '' };
 }
 
