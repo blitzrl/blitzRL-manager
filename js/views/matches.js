@@ -6,6 +6,7 @@ import { AIService } from '../services/aiService.js';
 import { logChange } from '../services/history.js';
 import { swapTeamsInMatchday } from '../services/schedule.js';
 import { openMatchSummary } from './matchSummary.js';
+import { applyMatchBonuses, detectVictoryType } from '../services/economy.js';
 
 export function matchesView(){
   const db = getDB();
@@ -45,10 +46,19 @@ function matchRow(m){
   const B = db.teams.find(t => t.id === m.teamBId) || null;
   const sA = m.games.filter(g => g.scoreA > g.scoreB).length;
   const sB = m.games.filter(g => g.scoreB > g.scoreA).length;
+  
+  let vType = null;
+  if (m.status === 'finished') {
+    let wId = m.winnerId;
+    if (!wId) wId = sA > sB ? m.teamAId : m.teamBId;
+    vType = detectVictoryType(m.games, m.format, wId, m.teamAId, m.teamBId, db.config.economy);
+  }
+
   const status = m.status === 'finished'
-    ? `<span class="badge badge-win">FINAL</span>`
+    ? `<span class="badge badge-win">FINAL ${vType ? vType.emoji : ''}</span>`
     : m.status === 'live' ? `<span class="badge badge-live">EN JUEGO</span>`
     : `<span class="badge">PENDIENTE</span>`;
+    
   const dateLine = (m.date || m.time)
     ? `<div class="match-meta-line">
          ${m.date ? `<i class="fa-solid fa-calendar"></i> ${m.date}` : ''}
@@ -131,7 +141,6 @@ export function bindMatchesEvents(){
       openMatchEditor(b.dataset.editMatch);
     }));
 
-  // Click en partido reportado → summary
   document.querySelectorAll('[data-match-summary]').forEach(row => {
     row.addEventListener('click', (e) => {
       if(e.target.closest('button')) return;
@@ -498,9 +507,17 @@ function renderNewGame(container, m, A, B, activeRoster){
       const wonB = target.games.filter(g => g.scoreB > g.scoreA).length;
       const need = target.format === 'BO3' ? 2 : target.format === 'BO5' ? 3 : 4;
       target.status = (wonA === need || wonB === need) ? 'finished' : 'live';
+      if (target.status === 'finished') target.winnerId = wonA === need ? A.id : B.id;
     });
 
     logChange('report', 'match', m.id, `Partida ${scoreA}-${scoreB} (${A.name} vs ${B.name})`);
+    
+    // Aplicar bonus si terminó
+    const updatedM = getDB().matches.find(x => x.id === m.id);
+    if (updatedM && updatedM.status === 'finished') {
+      applyMatchBonuses(m.id);
+    }
+
     toast('Partida reportada','success');
     closeTopModal();
     window.dispatchEvent(new HashChangeEvent('hashchange'));
@@ -777,8 +794,15 @@ function renderAI(container, m, A, B){
       const wonB = t.games.filter(g => g.scoreB > g.scoreA).length;
       const need = t.format === 'BO3' ? 2 : t.format === 'BO5' ? 3 : 4;
       t.status = (wonA === need || wonB === need) ? 'finished' : 'live';
+      if (t.status === 'finished') t.winnerId = wonA === need ? A.id : B.id;
     });
     logChange('report-ai', 'match', m.id, `Reporte IA (${scoreA}-${scoreB})`);
+    
+    const updatedM = getDB().matches.find(x => x.id === m.id);
+    if (updatedM && updatedM.status === 'finished') {
+      applyMatchBonuses(m.id);
+    }
+
     toast('Reporte IA confirmado','success');
     closeTopModal();
     window.dispatchEvent(new HashChangeEvent('hashchange'));
