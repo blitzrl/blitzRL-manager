@@ -17,6 +17,7 @@ import { login, logout, getCurrentUser } from '../services/auth.js';
 import { forcePush, forcePull, getSyncState } from '../services/sync.js';
 import { applyTheme, DEFAULT_THEME, exportTheme, importTheme, themePreviewBg } from '../services/theme.js';
 import { exportLedgerTXT, applySanction } from '../services/economy.js';
+import { generatePlayers, simulateMatchdays } from '../services/simulator.js'; // IMPORTACIÓN DEL SIMULADOR
 
 let configTab = 'general';
 let _authUser = null;
@@ -440,6 +441,15 @@ function renderGeneral(db){
       </p>
       <button class="btn btn-danger" id="btnResetDivisions">🔀 RESETEAR DIVISIONES</button>
     </div>
+
+    <!-- SIMULADOR DE TEMPORADA -->
+    <div class="card" style="margin-top:18px;border-left:4px solid var(--accent); background:linear-gradient(90deg, rgba(111,168,255,.05), transparent)">
+      <div class="card-header"><div class="card-title" style="color:var(--accent)"><span class="dot" style="color:var(--accent)">◆</span>SIMULADOR DE TEMPORADA (QA)</div></div>
+      <p style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:14px">
+        Herramienta de prueba para simular jornadas, llenar equipos con jugadores de prueba y avanzar en los Playoffs de forma automática.
+      </p>
+      <button class="btn" id="btnSimulateSeason" style="border-color:var(--accent);color:var(--accent)">🚀 SIMULAR TEMPORADA</button>
+    </div>
   `;
 }
 
@@ -495,7 +505,7 @@ function renderThemeTab(db){
       </div>
     </div>
 
-    <!-- NUEVO: BANNER DE FONDO -->
+    <!-- BANNER DE FONDO -->
     <div class="card" style="margin-bottom:18px">
       <div class="card-header"><div class="card-title"><span class="dot">◆</span>BANNER DE FICHajes (NOTICIAS)</div></div>
       <p class="field-hint" style="margin-bottom:12px">Esta imagen de fondo se usará al generar automáticamente la noticia de un fichaje.</p>
@@ -738,7 +748,7 @@ function bindThemeTab(){
   const currentTheme = db.config.theme?.active || getDefaultTheme();
   window.__themeEditingLogo = currentTheme.logo || '';
 
-  // NUEVO: BANNER
+  // BANNER
   const bannerInput = document.getElementById('themeBannerInput');
   document.getElementById('themeBannerUpload')?.addEventListener('click', () => bannerInput?.click());
   bannerInput?.addEventListener('change', async () => {
@@ -864,7 +874,7 @@ function bindThemeTab(){
     if (!confirm('¿Restaurar todos los valores por defecto del tema?')) return;
     const def = getDefaultTheme();
     window.__themeEditingLogo = def.logo || '';
-    window.__themeEditingBanner = ''; // Limpiar banner
+    window.__themeEditingBanner = '';
     const db2 = getDB();
     const fake = { ...db2, config: { ...db2.config, theme: { active: def, presets: db2.config.theme?.presets || [] } }, transferBannerBg: '' };
     document.getElementById('configContent').innerHTML = renderThemeTab(fake);
@@ -886,7 +896,6 @@ function bindThemeTab(){
         else t.name = 'Custom';
         d.config.theme.active = t;
         
-        // Guardar banner
         d.transferBannerBg = window.__themeEditingBanner || '';
       });
 
@@ -2106,6 +2115,11 @@ export function bindConfigEvents(){
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   });
 
+  // SIMULADOR
+  document.getElementById('btnSimulateSeason')?.addEventListener('click', () => {
+    openSimulatorModal();
+  });
+
   document.getElementById('saveZones')?.addEventListener('click', () => {
     saveZonesConfig(db);
     logChange('update','zones', null, 'Clasificaciones actualizadas');
@@ -2529,7 +2543,157 @@ function esc(str){
 }
 
 // ============================================================
-// AI TOURNAMENT WIZARD
+// SIMULADOR MODAL
+// ============================================================
+function openSimulatorModal() {
+  openModal({
+    id: 'simulator-password',
+    title: '🔒 SIMULADOR DE TEMPORADA',
+    body: `
+      <p style="font-size:13px;color:var(--silver);line-height:1.7;margin-bottom:16px">
+        Esta es una herramienta de QA. Ingresa la contraseña para continuar.
+      </p>
+      <div class="field">
+        <label>Contraseña</label>
+        <input class="input" type="password" id="simPass" placeholder="••••••••" autofocus>
+      </div>
+      <div id="simError" style="color:var(--danger);font-size:12px;margin-top:8px"></div>
+    `,
+    footer: `
+      <button class="btn btn-ghost" data-close>CANCELAR</button>
+      <button class="btn btn-primary" id="btnCheckPass">DESBLOQUEAR</button>
+    `,
+    onMount: root => {
+      const input = root.querySelector('#simPass');
+      const btn = root.querySelector('#btnCheckPass');
+      const err = root.querySelector('#simError');
+
+      const check = () => {
+        if (input.value === 'blitz') {
+          closeTopModal();
+          setTimeout(openSimulatorOptions, 200);
+        } else {
+          err.textContent = 'Contraseña incorrecta.';
+          input.value = '';
+          input.focus();
+        }
+      };
+
+      btn.addEventListener('click', check);
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') check(); });
+    }
+  });
+}
+
+function openSimulatorOptions() {
+  openModal({
+    id: 'simulator-options',
+    title: '🚀 SIMULADOR',
+    wide: true,
+    body: `
+      <div style="display:flex;flex-direction:column;gap:20px;">
+        <!-- Opción 1: Jornadas -->
+        <div class="card" style="padding:16px;">
+          <div class="card-header" style="margin-bottom:10px;"><div class="card-title">SIMULAR JORNADAS</div></div>
+          <div class="row">
+            <div class="field" style="margin:0;">
+              <label>Cantidad de jornadas a simular</label>
+              <input class="input" type="number" id="simMatchdays" value="1" min="1" max="20">
+            </div>
+            <div class="field" style="margin:0; display:flex; align-items:flex-end;">
+              <button class="btn btn-primary" id="btnSimMatchdays" style="width:100%;">SIMULAR PARTIDOS</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Opción 2: Temporada Completa -->
+        <div class="card" style="padding:16px;">
+          <div class="card-header" style="margin-bottom:10px;"><div class="card-title">TEMPORADA COMPLETA</div></div>
+          <div style="display:flex; gap:10px;">
+            <button class="btn" id="btnSimFull" style="flex:1;">SIMULAR LIGA REGULAR</button>
+            <button class="btn" id="btnSimFullPlayoffs" style="flex:1; border-color:var(--gold); color:var(--gold);">LIGA + PLAY-IN + PLAYOFFS</button>
+          </div>
+        </div>
+
+        <!-- Opción 3: Crear Jugadores -->
+        <div class="card" style="padding:16px;">
+          <div class="card-header" style="margin-bottom:10px;"><div class="card-title">CREAR JUGADORES FALTANTES</div></div>
+          <p class="field-hint" style="margin-bottom:10px;">Llena los equipos que tengan menos de 3 jugadores. Si no das nombres, usará "Player X".</p>
+          
+          <div class="field">
+            <label>Nombres (Opcional)</label>
+            <textarea class="textarea" id="simNames" rows="3" placeholder="1.- Juan, 2.- Pedro&#10;3.- Luis..."></textarea>
+          </div>
+          
+          <div class="row" style="align-items:flex-end;">
+            <div class="field" style="margin:0;">
+              <label>O sube un archivo .txt</label>
+              <input type="file" id="simFile" accept=".txt" class="input" style="padding:6px;">
+            </div>
+            <button class="btn btn-primary" id="btnSimCreatePlayers">CREAR JUGADORES</button>
+          </div>
+        </div>
+      </div>
+      <div id="simProgress" style="margin-top:20px; text-align:center; color:var(--accent); font-weight:600;"></div>
+    `,
+    footer: `<button class="btn btn-ghost" data-close>CERRAR</button>`,
+    onMount: root => {
+      const progress = root.querySelector('#simProgress');
+
+      // 1. Simular Jornadas
+      root.querySelector('#btnSimMatchdays').addEventListener('click', async () => {
+        const amount = parseInt(root.querySelector('#simMatchdays').value) || 1;
+        progress.textContent = 'Simulando...';
+        await simulateMatchdays(amount, false, (msg) => progress.textContent = msg);
+        toast('Jornadas simuladas con éxito', 'success');
+        progress.textContent = '¡Simulación completada!';
+        setTimeout(() => window.dispatchEvent(new HashChangeEvent('hashchange')), 1000);
+      });
+
+      // 2. Simular Temporada Completa
+      root.querySelector('#btnSimFull').addEventListener('click', async () => {
+        progress.textContent = 'Simulando liga regular...';
+        await simulateMatchdays(99, false, (msg) => progress.textContent = msg);
+        toast('Liga regular simulada', 'success');
+        progress.textContent = '¡Simulación completada!';
+        setTimeout(() => window.dispatchEvent(new HashChangeEvent('hashchange')), 1000);
+      });
+
+      // 3. Simular Temporada + Playoffs
+      root.querySelector('#btnSimFullPlayoffs').addEventListener('click', async () => {
+        progress.textContent = 'Simulando liga regular...';
+        await simulateMatchdays(99, true, (msg) => progress.textContent = msg);
+        toast('Temporada y Playoffs simulados', 'success');
+        progress.textContent = '¡Simulación completada!';
+        setTimeout(() => window.dispatchEvent(new HashChangeEvent('hashchange')), 1000);
+      });
+
+      // 4. Crear Jugadores
+      const fileInput = root.querySelector('#simFile');
+      const textArea = root.querySelector('#simNames');
+      
+      fileInput.addEventListener('change', () => {
+        const file = fileInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => { textArea.value = e.target.result; };
+        reader.readAsText(file);
+      });
+
+      root.querySelector('#btnSimCreatePlayers').addEventListener('click', () => {
+        progress.textContent = 'Creando jugadores...';
+        const text = textArea.value;
+        const count = generatePlayers(text);
+        toast(`Se crearon ${count} jugadores exitosamente`, 'success');
+        progress.textContent = `¡Se crearon ${count} jugadores!`;
+        setTimeout(() => window.dispatchEvent(new HashChangeEvent('hashchange')), 1000);
+      });
+    }
+  });
+}
+
+// ============================================================
+// AI TOURNAMENT WIZARD (Se mantiene completo)
 // ============================================================
 const AITournamentWizard = {
   state: {
