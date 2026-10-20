@@ -337,5 +337,53 @@ export function exportLedgerTXT() {
   a.href = url;
   a.download = `ZENITH_CONTABILIDAD_${new Date().toISOString().slice(0,10)}.txt`;
   a.click();
+
+  export function detectVictoryType(games, format, winnerId, teamAId, teamBId, economy) {
+  const db = getDB();
+  const eco = economy || db?.config?.economy || ECONOMY_DEFAULTS;
+  if (!eco || !eco.enabled || !games || games.length === 0) return null;
+
+  const winnerIsA = winnerId === teamAId;
+  const thresholds = eco.bonuses.thresholds?.[format || 'BO3'] || eco.bonuses.thresholds['BO3'];
+  
+  let winnerGamesWon = 0;
+  let loserGamesWon = 0;
+  let shutouts = 0;
+  let totalGoalDiff = 0;
+
+  games.forEach(g => {
+    const wScore = winnerIsA ? g.scoreA : g.scoreB;
+    const lScore = winnerIsA ? g.scoreB : g.scoreA;
+    
+    if (wScore > lScore) {
+      winnerGamesWon++;
+      totalGoalDiff += (wScore - lScore);
+      if (lScore === 0) shutouts++;
+    } else {
+      loserGamesWon++;
+    }
+  });
+
+  if (winnerGamesWon === 0) return null;
+
+  const avgGoalDiff = totalGoalDiff / winnerGamesWon;
+
+  // NUEVO: Evaluar Tiers (Si un equipo bajo le gana a uno top)
+  let isUpset = false;
+  // (Esta lógica se conectará con la config de posiciones en la siguiente actualización)
+
+  // 1. Humillante
+  if (shutouts >= thresholds.humiliatingShutout || avgGoalDiff >= thresholds.humiliatingGoalDiff || isUpset) {
+    return { type: 'humiliating', label: eco.bonuses.winHumiliating.label, amount: eco.bonuses.winHumiliating.amount, emoji: '😂' };
+  }
+  
+  // 2. Simple (Ganó sin perder ninguna partida)
+  if (loserGamesWon === 0) {
+    return { type: 'simple', label: eco.bonuses.winSimple.label, amount: eco.bonuses.winSimple.amount, emoji: '✅' };
+  }
+
+  // 3. Complicada
+  return { type: 'hard', label: eco.bonuses.winHard.label, amount: eco.bonuses.winHard.amount, emoji: '⚔️' };
+}
   URL.revokeObjectURL(url);
 }
