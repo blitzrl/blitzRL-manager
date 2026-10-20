@@ -5,6 +5,7 @@ import { getDB } from './storage.js';
 
 export async function generateTransferBanner(player, fromTeam, toTeam, price){
   const db = getDB();
+  const brandName = db.config?.theme?.active?.brandName || 'ZENITH CHAMPIONSHIP';
   const bg = db.transferBannerBg || '';
   const canvas = document.createElement('canvas');
   canvas.width = 1200; canvas.height = 500;
@@ -40,35 +41,32 @@ export async function generateTransferBanner(player, fromTeam, toTeam, price){
   if (shR) ctx.drawImage(shR, 910, cy - 80, 160, 160);
   else drawShieldPlaceholder(ctx, 910, cy - 80, 160, 160);
 
-  // Flecha apuntando a la DERECHA (origen → destino)
   ctx.fillStyle = '#E6C476';
   ctx.beginPath();
-  ctx.moveTo(680, cy);            // punta derecha
-  ctx.lineTo(560, cy - 32);       // diagonal superior
-  ctx.lineTo(560, cy - 12);       // escalón superior
-  ctx.lineTo(520, cy - 12);       // base superior
-  ctx.lineTo(520, cy + 12);       // base inferior
-  ctx.lineTo(560, cy + 12);       // escalón inferior
-  ctx.lineTo(560, cy + 32);       // diagonal inferior
+  ctx.moveTo(680, cy);
+  ctx.lineTo(560, cy - 32);
+  ctx.lineTo(560, cy - 12);
+  ctx.lineTo(520, cy - 12);
+  ctx.lineTo(520, cy + 12);
+  ctx.lineTo(560, cy + 12);
+  ctx.lineTo(560, cy + 32);
   ctx.closePath();
   ctx.fill();
 
-  // Nombre del jugador
   ctx.textAlign = 'center';
   ctx.fillStyle = '#E8EAED';
   ctx.font = 'bold 42px Rajdhani, Inter, sans-serif';
   ctx.fillText((player.name || '?').toUpperCase(), 600, 380);
 
-  // NUEVO: Mostrar Precio
   if (price !== undefined && price !== null) {
-    ctx.fillStyle = '#E6C476'; // Dorado
+    ctx.fillStyle = '#E6C476';
     ctx.font = 'bold 28px Rajdhani, Inter, sans-serif';
     ctx.fillText(`$${price.toLocaleString()}`, 600, 425);
   }
 
   ctx.fillStyle = '#8D929A';
   ctx.font = '600 18px Rajdhani, Inter, sans-serif';
-  ctx.fillText('TRANSFER OFICIAL · ZENITH CHAMPIONSHIP', 600, 465);
+  ctx.fillText(`TRANSFER OFICIAL · ${brandName.toUpperCase()}`, 600, 465);
 
   ctx.fillStyle = '#C7CBD1';
   ctx.font = 'bold 20px Rajdhani, Inter, sans-serif';
