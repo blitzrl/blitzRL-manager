@@ -16,8 +16,14 @@ export function calculatePlayerPrice(player, stats, economy){
   const rank = player.rank || 'Bronze';
   const level = player.rankLevel || 1;
   
-  const rankTable = eco.basePriceByRank?.[rank] || {};
-  const basePrice = rankTable[level] ?? rankTable[1] ?? 0;
+  // FIX: Usar marketValue si existe, sino el precio base por rango
+  let basePrice = 0;
+  if (player.marketValue !== undefined && player.marketValue !== null) {
+    basePrice = player.marketValue;
+  } else {
+    const rankTable = eco.basePriceByRank?.[rank] || {};
+    basePrice = rankTable[level] ?? rankTable[1] ?? 0;
+  }
 
   const pig = stats?.pig ?? 0;
   const pigAdjustment = pig * (eco.pigMultiplier || 1000);
