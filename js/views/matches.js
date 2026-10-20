@@ -545,17 +545,20 @@ function updatePlayerPriceHistory(matchId) {
       const finalPrice = priceData.price > 0 ? priceData.price : (pStats.pig * (d.config.economy.pigMultiplier || 1000)) || 1000;
       
       p.priceHistory = p.priceHistory || [];
-      
-      // FIX: Forzar a número entero para evitar duplicados
       const mdNum = parseInt(m.matchday, 10);
       
       p.priceHistory = p.priceHistory.filter(h => !(h.matchday === mdNum && h.seasonId === m.seasonId));
       
+      const currentTeam = d.teams.find(t => (t.roster || []).some(r => r.playerId === p.id));
+
       p.priceHistory.push({
         seasonId: m.seasonId,
+        divisionId: m.divisionId,
         matchday: mdNum,
         price: finalPrice,
         pig: pStats.pig,
+        teamId: currentTeam?.id || null,
+        teamName: currentTeam?.name || 'Agente Libre',
         date: Date.now()
       });
     });
