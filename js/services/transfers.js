@@ -57,14 +57,17 @@ export function doFreeAgent(playerId){
       if(!pl) return;
       const ft = fromTeam ? d.teams.find(t => t.id === fromTeam.id) : null;
 
-      // GUARDAR HISTORIAL DE CARRERA (FIX)
+      // Historial de carrera
       if (ft) {
         pl.history = pl.history || [];
         pl.history.unshift({
           seasonName: d.seasons.find(s=>s.active)?.name || 'Actual',
           divisionName: d.divisions.find(x => x.id === ft.divisionId)?.name || '—',
           teamName: ft.name,
-          role: 'AGENTE LIBRE',
+          role: 'LIBERADO',
+          fromTeamName: ft.name,
+          toTeamName: 'Agente Libre',
+          price: 0,
           date: Date.now()
         });
       }
@@ -132,13 +135,16 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset, customPrice
       const ft = fromTeam ? d.teams.find(t => t.id === fromTeam.id) : null;
       if (!pl || !tt) return;
 
-      // GUARDAR HISTORIAL DE CARRERA (FIX)
+      // Historial de carrera detallado
       pl.history = pl.history || [];
       pl.history.unshift({
         seasonName: d.seasons.find(s=>s.active)?.name || 'Actual',
         divisionName: d.divisions.find(x => x.id === tt.divisionId)?.name || '—',
         teamName: tt.name,
         role: goesPending ? 'PENDIENTE' : 'TRANSFERENCIA',
+        fromTeamName: ft?.name || 'Agente Libre',
+        toTeamName: tt.name,
+        price: price,
         date: Date.now()
       });
 
