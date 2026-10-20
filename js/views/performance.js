@@ -64,7 +64,7 @@ export function performanceView(){
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><div class="card-title"><span class="dot">◆</span>EVOLUCIÓN DE PRECIO</div></div>
+        <div class="card-header"><div class="card-title"><span class="dot">◆</span>EVOLUCIÓN DE PRECIO (POR JORNADA)</div></div>
         <div style="position:relative; height:300px; width:100%;">
           <canvas id="perfEconomyChart"></canvas>
         </div>
@@ -78,7 +78,6 @@ export function bindPerformanceEvents(){
   const ctxEco = document.getElementById('perfEconomyChart');
   if (!ctxStats || !ctxEco) return;
 
-  // FIX: Destruir instancias previas si existen
   if (chartStats) { chartStats.destroy(); chartStats = null; }
   if (chartEconomy) { chartEconomy.destroy(); chartEconomy = null; }
 
@@ -132,16 +131,20 @@ function updateChartsData() {
       { label: 'Asistencias', data: timeline.map(t => t.assists), borderColor: '#6FA8FF', backgroundColor: 'rgba(111,168,255,0.1)', tension: 0.3, fill: true }
     ];
 
-    const history = player.priceHistory || [];
+    // FIX: Leer historial filtrado por matchday
+    const history = (player.priceHistory || [])
+      .filter(h => h.matchday)
+      .sort((a,b) => a.matchday - b.matchday);
+
     if (history.length === 0) {
       const stats = aggregatePlayerStats().find(s => s.id === player.id);
       const currentPriceData = calculatePlayerPrice(player, stats || {}, db.config.economy);
-      chartEconomy.data.labels = [season?.name || 'Actual'];
+      chartEconomy.data.labels = ['Actual'];
       chartEconomy.data.datasets = [{
         label: 'Valor de Mercado ($)', data: [currentPriceData.price || 1000], borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.3, fill: true
       }];
     } else {
-      chartEconomy.data.labels = history.map(h => h.seasonName);
+      chartEconomy.data.labels = history.map(h => `J${h.matchday}`);
       chartEconomy.data.datasets = [{
         label: 'Valor de Mercado ($)', data: history.map(h => h.price), borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.3, fill: true
       }];
