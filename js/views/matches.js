@@ -513,11 +513,14 @@ function renderNewGame(container, m, A, B, activeRoster){
 
     logChange('report', 'match', m.id, `Partida ${scoreA}-${scoreB} (${A.name} vs ${B.name})`);
     
-    const updatedM = getDB().matches.find(x => x.id === m.id);
-    if (updatedM && updatedM.status === 'finished') {
-      applyMatchBonuses(m.id);
-      updatePlayerPriceHistory(m.id); // FIX: Guardar historial por jornada
-    }
+    // FIX: Esperar a que el mutate termine antes de calcular precios
+    setTimeout(() => {
+      const updatedM = getDB().matches.find(x => x.id === m.id);
+      if (updatedM && updatedM.status === 'finished') {
+        applyMatchBonuses(m.id);
+        updatePlayerPriceHistory(m.id); 
+      }
+    }, 100);
 
     toast('Partida reportada','success');
     closeTopModal();
@@ -525,16 +528,13 @@ function renderNewGame(container, m, A, B, activeRoster){
   });
 }
 
-// FIX: Nueva función para calcular y guardar el valor de mercado en cada jornada
+// FIX DEFINITIVO: Calcular y guardar el valor de mercado
 function updatePlayerPriceHistory(matchId) {
   const db = getDB();
   const m = db.matches.find(x => x.id === matchId);
   if (!m) return;
 
-  // Calculamos stats de la división y temporada actuales
   const stats = aggregatePlayerStats({ divisionId: m.divisionId, seasonId: m.seasonId });
-  
-  // Sacamos los IDs de todos los jugadores que participaron en la serie
   const playerIds = [...new Set(m.games.flatMap(g => g.players.map(p => p.playerId)))];
 
   mutate(d => {
@@ -545,16 +545,18 @@ function updatePlayerPriceHistory(matchId) {
       const pStats = stats.find(s => s.id === pid) || { pig: 0 };
       const priceData = calculatePlayerPrice(p, pStats, d.config.economy);
       
+      // Si el precio da 0, forzamos un precio base mínimo para que la gráfica pinte algo
+      const finalPrice = priceData.price > 0 ? priceData.price : (pStats.pig * (d.config.economy.pigMultiplier || 1000)) || 1000;
+      
       p.priceHistory = p.priceHistory || [];
       
-      // Evitar duplicados en la misma jornada
+      // Limpiar duplicados de la misma jornada
       p.priceHistory = p.priceHistory.filter(h => !(h.matchday === m.matchday && h.seasonId === m.seasonId));
       
-      // Guardar
       p.priceHistory.push({
         seasonId: m.seasonId,
         matchday: m.matchday,
-        price: priceData.price,
+        price: finalPrice,
         pig: pStats.pig,
         date: Date.now()
       });
@@ -836,11 +838,14 @@ function renderAI(container, m, A, B){
     });
     logChange('report-ai', 'match', m.id, `Reporte IA (${scoreA}-${scoreB})`);
     
-    const updatedM = getDB().matches.find(x => x.id === m.id);
-    if (updatedM && updatedM.status === 'finished') {
-      applyMatchBonuses(m.id);
-      updatePlayerPriceHistory(m.id); // FIX: Guardar historial por jornada también en IA
-    }
+    // FIX: Esperar a que el mutate termine antes de calcular precios
+    setTimeout(() => {
+      const updatedM = getDB().matches.find(x => x.id === m.id);
+      if (updatedM && updatedM.status === 'finished') {
+        applyMatchBonuses(m.id);
+        updatePlayerPriceHistory(m.id); 
+      }
+    }, 100);
 
     toast('Reporte IA confirmado','success');
     closeTopModal();
