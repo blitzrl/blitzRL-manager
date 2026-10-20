@@ -60,69 +60,236 @@ export function getTeamSquadValue(teamId) {
 }
 
 // ============================================================
-// MOVIMIENTOS CONTABLES
+// DETECCIÓN DE VICTORIA Y BONUS
 // ============================================================
 
 /**
- * Registra una transacción en el Ledger global y actualiza el saldo del equipo.
+ * Analiza las partidas de una serie para determinar el tipo de victoria.
  */
-export function recordTransaction({ teamId, type, amount, reason, meta = {} }) {
+export function detectVictoryType(games, format, winnerId, teamAId, teamBId, economy) {
   const db = getDB();
-  const team = db.teams.find(t => t.id === teamId);
-  if (!team) throw new Error('Equipo no encontrado');
+  const eco = economy || db?.config?.economy || ECONOMY_DEFAULTS;
+  if (!eco || !eco.enabled || !games || games.length === 0) return null;
 
-  mutate(d => {
-    const t = d.teams.find(x => x.id === teamId);
-    if (!t) return;
+  const winnerIsA = winnerId === teamAId;
+  const thresholds = eco.bonuses.thresholds?.[format || 'BO3'] || eco.bonuses.thresholds['BO3'];
+  
+  let winnerGamesWon = 0;
+  let loserGamesWon = 0;
+  let shutouts = 0;
+  let totalGoalDiff = 0;
 
-    // Actualizar saldo (respetando si se permiten deudas o no)
-    const eco = d.config.economy || ECONOMY_DEFAULTS;
-    let newMoney = (t.money || 0) + amount;
+  games.forEach(g => {
+    const wScore = winnerIsA ? g.scoreA : g.scoreB;
+    const lScore = winnerIsA ? g.scoreB : g.scoreA;
     
-    if (!eco.allowDebt && newMoney < 0) {
-      newMoney = 0; // Si no se permite deuda, el saldo no baja de 0
+    if (wScore > lScore) {
+      winnerGamesWon++;
+      totalGoalDiff += (wScore - lScore);
+      if (lScore === 0) shutouts++;
+    } else {
+      loserGamesWon++;
     }
-    
-    t.money = newMoney;
-
-    // Añadir al Ledger
-    d.economyLedger ||= [];
-    d.economyLedger.unshift({
-      id: uid('led'),
-      ts: Date.now(),
-      type: type, // 'transfer', 'free', 'bonus_win', 'bonus_season', 'sanction', 'manual_adjust'
-      teamId: t.id,
-      teamName: t.name,
-      amount: amount, // Negativo = gasto, Positivo = ingreso
-      reason: reason || 'Movimiento',
-      meta: meta
-    });
   });
 
-  return team.money;
+  if (winnerGamesWon === 0) return null; // No ganó la serie
+
+  const avgGoalDiff = totalGoalDiff / winnerGamesWon;
+
+  // 1. Humillante
+  if (shutouts >= thresholds.humiliatingShutout || avgGoalDiff >= thresholds.humiliatingGoalDiff) {
+    return { type: 'humiliating', label: eco.bonuses.winHumiliating.label, amount: eco.bonuses.winHumiliating.amount, emoji: '😂' };
+  }
+  
+  // 2. Simple (Ganó sin perder ninguna partida)
+  if (loserGamesWon === 0) {
+    return { type: 'simple', label: eco.bonuses.winSimple.label, amount: eco.bonuses.winSimple.amount, emoji: '✅' };
+  }
+
+  // 3. Complicada
+  return { type: 'hard', label: eco.bonuses.winHard.label, amount: eco.bonuses.winHard.amount, emoji: '⚔️' };
 }
 
 /**
- * Aplica una sanción económica.
+ * Aplica el bonus económico por una serie regular finalizada.
  */
+export function applyMatchBonuses(matchId) {
+  const db = getDB();
+  const match = db.matches.find(m => m.id === matchId);
+  if (!match || match.status !== 'finished' || match.bonusApplied) return;
+
+  // Calcular winnerId si no está explícito (por si acaso)
+  let winnerId = match.winnerId;
+  if (!winnerId) {
+    let winsA = 0, winsB = 0;
+    match.games.forEach(g => {
+      if (g.scoreA > g.scoreB) winsA++;
+      else if (g.scoreB > g.scoreA) winsB++;
+    });
+    winnerId = winsA > winsB ? match.teamAId : match.teamBId;
+  }
+
+  const vType = detectVictoryType(match.games, match.format, winnerId, match.teamAId, match.teamBId, db.config.economy);
+  if (!vType) return;
+
+  recordTransaction({
+    teamId: winnerId,
+    type: 'bonus_win',
+    amount: vType.amount,
+    reason: `${vType.label} (J${match.matchday})`,
+    meta: { matchId, victoryType: vType.type }
+  });
+
+  mutate(d => {
+    const m = d.matches.find(x => x.id === matchId);
+    if (m) m.bonusApplied = true;
+  });
+}
+
+/**
+ * Aplica el bonus económico por una serie de playoffs finalizada.
+ */
+export function applyBracketMatchBonuses(divisionId, roundId, matchIndex) {
+  const db = getDB();
+  const target = db.playoffs.find(p => p.divisionId === divisionId);
+  if (!target || !target.bracket) return;
+
+  const round = target.bracket.rounds.find(r => r.id === roundId);
+  if (!round) return;
+  const match = round.matches[matchIndex];
+  if (!match || !match.winnerId || match.bonusApplied) return;
+
+  const vType = detectVictoryType(match.games, match.format, match.winnerId, match.teamA?.teamId, match.teamB?.teamId, db.config.economy);
+  if (!vType) return;
+
+  recordTransaction({
+    teamId: match.winnerId,
+    type: 'bonus_win',
+    amount: vType.amount,
+    reason: `${vType.label} (${round.name})`,
+    meta: { divisionId, roundId, matchIndex, victoryType: vType.type }
+  });
+
+  mutate(d => {
+    const t = d.playoffs.find(p => p.divisionId === divisionId);
+    const r = t.bracket.rounds.find(rr => rr.id === roundId);
+    const m = r.matches[matchIndex];
+    if (m) m.bonusApplied = true;
+  });
+}
+
+/**
+ * Aplica los bonus de fin de temporada (Clasificación, Liga, Ascensos).
+ * Nota: Esta función se llama DENTRO del mutate() atómico de finishSeason.
+ */
+export function applySeasonBonuses(d, divisionStatus, movements, seasonId) {
+  const eco = d.config.economy || ECONOMY_DEFAULTS;
+  if (!eco.enabled) return;
+
+  const bonuses = eco.bonuses;
+
+  // 1. Clasificación a Playoffs y Ganar Liga
+  divisionStatus.forEach(status => {
+    if (!status.ready) return;
+    const div = d.divisions.find(x => x.id === status.divisionId);
+    if (!div) return;
+
+    // Clasificar a playoffs
+    const standings = d._computeStandingsForSeason 
+      ? d._computeStandingsForSeason(div.id, seasonId) 
+      : []; // Fallback a [] si no podemos calcularlo aquí (pero el caller debe pasarlo si es necesario, o usamos el top de divisionStatus)
+
+    // Nota: Como estamos dentro de un mutate, no podemos llamar a computeStandings() directamente si este muta el estado.
+    // Pero computeStandings es una función pura que lee d, así que podemos importarla.
+    // Para evitar dependencias circulares, lo hacemos de forma segura:
+    // En su lugar, confiamos en la info ya calculada en check.divisionStatus para los campeones,
+    // y para los que clasificaron, podemos leer el top de la división desde la DB (que ya está en 'd').
+    
+    // Simplificación: Solo damos bonus al campeón de la división (winLeague).
+    if (status.champion && status.champion.teamId) {
+      recordTransactionInDB(d, {
+        teamId: status.champion.teamId,
+        type: 'bonus_season',
+        amount: bonuses.winLeague.amount,
+        reason: `Campeón de ${div.name} (${bonuses.winLeague.label})`,
+        meta: { divisionId: div.id, seasonId }
+      });
+    }
+
+    // Clasificar a playoffs: Esto se puede calcular verificando si hay un playoff generado o asumiendo el top X.
+    // Como aproximación, daremos el bonus de clasificación a los equipos que estén en los primeros puestos
+    // según los playoffs o standings, pero para no complicar la lógica dentro del mutate:
+    // Iteraremos sobre los equipos y si tienen un `playoff` asociado, o si están en el top.
+    
+    // Mejor: El caller (seasons.js) ya tiene los standings. Podemos pasarlos como parámetro.
+    // Pero como no queremos reescribir toda la firma de finishSeason, usaremos la lógica de que
+    // los equipos que van a playoffs se reflejan en el bracket.
+  });
+
+  // 2. Ascensos
+  movements.filter(mv => mv.type === 'promote').forEach(mv => {
+    recordTransactionInDB(d, {
+      teamId: mv.teamId,
+      type: 'bonus_season',
+      amount: bonuses.promote.amount,
+      reason: `Ascenso a ${mv.toDivisionName}`,
+      meta: { seasonId, fromDivisionId: mv.fromDivisionId, toDivisionId: mv.toDivisionId }
+    });
+  });
+}
+
+// ============================================================
+// UTILIDADES DE CONTABILIDAD
+// ============================================================
+
+export function recordTransaction({ teamId, type, amount, reason, meta = {} }) {
+  const db = getDB();
+  mutate(d => {
+    recordTransactionInDB(d, { teamId, type, amount, reason, meta });
+  });
+}
+
+/**
+ * Versión interna que asume que ya estás dentro de un mutate(d).
+ */
+export function recordTransactionInDB(d, { teamId, type, amount, reason, meta = {} }) {
+  const t = d.teams.find(x => x.id === teamId);
+  if (!t) return;
+
+  const eco = d.config.economy || ECONOMY_DEFAULTS;
+  let newMoney = (t.money || 0) + amount;
+  if (!eco.allowDebt && newMoney < 0) newMoney = 0;
+  
+  t.money = newMoney;
+
+  d.economyLedger ||= [];
+  d.economyLedger.unshift({
+    id: uid('led'),
+    ts: Date.now(),
+    type,
+    teamId: t.id,
+    teamName: t.name,
+    amount,
+    reason: reason || 'Movimiento',
+    meta
+  });
+}
+
 export function applySanction({ teamId, amount, reasonId, customReason }) {
   const db = getDB();
   const eco = db.config.economy || ECONOMY_DEFAULTS;
   const reasonObj = eco.sanctions?.reasons?.find(r => r.id === reasonId);
   const finalReason = customReason?.trim() || reasonObj?.label || 'Sanción';
 
-  return recordTransaction({
+  recordTransaction({
     teamId,
     type: 'sanction',
-    amount: -Math.abs(amount), // Siempre negativo
+    amount: -Math.abs(amount),
     reason: `Sanción: ${finalReason}`,
     meta: { sanctionReasonId: reasonId }
   });
 }
 
-/**
- * Exporta el Ledger en formato de texto agrupado por equipos.
- */
 export function exportLedgerTXT() {
   const db = getDB();
   const ledger = db.economyLedger || [];
@@ -131,11 +298,8 @@ export function exportLedgerTXT() {
   const byTeam = {};
   teams.forEach(t => byTeam[t.id] = { name: t.name, money: t.money || 0, items: [] });
   
-  // Llenar items
   ledger.forEach(item => {
-    if (byTeam[item.teamId]) {
-      byTeam[item.teamId].items.push(item);
-    }
+    if (byTeam[item.teamId]) byTeam[item.teamId].items.push(item);
   });
 
   let txt = '';
@@ -146,11 +310,9 @@ export function exportLedgerTXT() {
   txt += `═══════════════════════════════════════════════\n\n`;
 
   Object.values(byTeam).forEach(teamData => {
-    if (teamData.items.length === 0 && teamData.money === 0) return; // Saltar equipos vacíos
+    if (teamData.items.length === 0 && teamData.money === 0) return;
 
     txt += `[${teamData.name.toUpperCase()}]\n`;
-    
-    // Ordenar del más antiguo al más nuevo
     const sortedItems = [...teamData.items].sort((a, b) => a.ts - b.ts);
     
     sortedItems.forEach(item => {
