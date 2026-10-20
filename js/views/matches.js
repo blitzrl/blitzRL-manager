@@ -513,12 +513,11 @@ function renderNewGame(container, m, A, B, activeRoster){
 
     logChange('report', 'match', m.id, `Partida ${scoreA}-${scoreB} (${A.name} vs ${B.name})`);
     
-    // FIX: Esperar a que el mutate termine antes de calcular precios
     setTimeout(() => {
       const updatedM = getDB().matches.find(x => x.id === m.id);
       if (updatedM && updatedM.status === 'finished') {
         applyMatchBonuses(m.id);
-        updatePlayerPriceHistory(m.id); 
+        updatePlayerPriceHistory(m.id);
       }
     }, 100);
 
@@ -528,7 +527,6 @@ function renderNewGame(container, m, A, B, activeRoster){
   });
 }
 
-// FIX DEFINITIVO: Calcular y guardar el valor de mercado
 function updatePlayerPriceHistory(matchId) {
   const db = getDB();
   const m = db.matches.find(x => x.id === matchId);
@@ -544,18 +542,18 @@ function updatePlayerPriceHistory(matchId) {
 
       const pStats = stats.find(s => s.id === pid) || { pig: 0 };
       const priceData = calculatePlayerPrice(p, pStats, d.config.economy);
-      
-      // Si el precio da 0, forzamos un precio base mínimo para que la gráfica pinte algo
       const finalPrice = priceData.price > 0 ? priceData.price : (pStats.pig * (d.config.economy.pigMultiplier || 1000)) || 1000;
       
       p.priceHistory = p.priceHistory || [];
       
-      // Limpiar duplicados de la misma jornada
-      p.priceHistory = p.priceHistory.filter(h => !(h.matchday === m.matchday && h.seasonId === m.seasonId));
+      // FIX: Forzar a número entero para evitar duplicados
+      const mdNum = parseInt(m.matchday, 10);
+      
+      p.priceHistory = p.priceHistory.filter(h => !(h.matchday === mdNum && h.seasonId === m.seasonId));
       
       p.priceHistory.push({
         seasonId: m.seasonId,
-        matchday: m.matchday,
+        matchday: mdNum,
         price: finalPrice,
         pig: pStats.pig,
         date: Date.now()
@@ -838,12 +836,11 @@ function renderAI(container, m, A, B){
     });
     logChange('report-ai', 'match', m.id, `Reporte IA (${scoreA}-${scoreB})`);
     
-    // FIX: Esperar a que el mutate termine antes de calcular precios
     setTimeout(() => {
       const updatedM = getDB().matches.find(x => x.id === m.id);
       if (updatedM && updatedM.status === 'finished') {
         applyMatchBonuses(m.id);
-        updatePlayerPriceHistory(m.id); 
+        updatePlayerPriceHistory(m.id);
       }
     }, 100);
 
