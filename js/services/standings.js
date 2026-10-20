@@ -6,7 +6,7 @@ export function computeStandings(divisionId, seasonId){
   const db = getDB();
   const division = db.divisions.find(d => d.id === divisionId);
   
-  // FIX: Buscar equipos que estén en la división, sin importar si el seasonId no coincide exactamente
+  // FIX: Buscar equipos por división. Si el equipo tiene un seasonId distinto, igual lo incluimos.
   const teams = db.teams.filter(t => t.divisionId === divisionId);
   
   const rows = new Map();
@@ -18,8 +18,9 @@ export function computeStandings(divisionId, seasonId){
     h2h: new Map()
   }));
 
+  // FIX: Filtrar partidos. Si el partido no tiene seasonId (null), lo contamos igual.
   const matches = db.matches.filter(m =>
-    m.divisionId === divisionId && m.status === 'finished' && (!seasonId || m.seasonId === seasonId)
+    m.divisionId === divisionId && m.status === 'finished' && (!seasonId || m.seasonId === seasonId || !m.seasonId)
   );
 
   matches.forEach(m => {
@@ -54,7 +55,6 @@ export function computeStandings(divisionId, seasonId){
   const order = division?.config?.tiebreakers || ['PTS','SG','DP','H2H'];
   list.sort((a,b) => compareTeams(a, b, order));
 
-  // Zonas
   const zones = division?.config?.zones || DEFAULT_ZONES;
   list.forEach((r, i) => {
     r.pos = i + 1;
