@@ -32,7 +32,7 @@ export function matchesView(){
       <div class="card" style="margin-bottom:16px" data-matchday="${day}">
         <div class="card-header">
           <div class="card-title"><span class="dot">◆</span>JORNADA ${day}</div>
-          <span class="card-sub">${list.length} partidos · arrastra equipos para reorganizar</span>
+          <span class="card-sub">${list.length} partidos</span>
         </div>
         ${list.map(m => matchRow(m)).join('')}
       </div>
@@ -65,7 +65,7 @@ function matchRow(m){
          ${m.time ? `<i class="fa-solid fa-clock"></i> ${m.time}` : ''}
          <span class="chip chip-accent" style="margin-left:6px">${m.format || 'BO3'}</span>
        </div>`
-    : `<div class="match-meta-line"><span class="chip">${m.format||'BO3'}</span> <span style="color:var(--muted);font-size:11px">sin fecha asignada</span></div>`;
+    : `<div class="match-meta-line"><span class="chip">${m.format||'BO3'}</span> <span style="color:var(--muted);font-size:11px">sin fecha</span></div>`;
 
   const locked = m.status === 'finished';
   const draggable = !locked;
@@ -103,7 +103,7 @@ function matchRow(m){
         ${dateLine}
         <div class="match-actions">
           ${status}
-          <button class="btn btn-sm" data-edit-match="${m.id}" title="Editar fecha/hora/formato">⚙</button>
+          <button class="btn btn-sm" data-edit-match="${m.id}" title="Editar">⚙</button>
           <button class="btn btn-sm" data-open-match="${m.id}">REPORTAR</button>
         </div>
       </div>
@@ -512,7 +512,6 @@ function renderNewGame(container, m, A, B, activeRoster){
 
     logChange('report', 'match', m.id, `Partida ${scoreA}-${scoreB} (${A.name} vs ${B.name})`);
     
-    // Aplicar bonus si terminó
     const updatedM = getDB().matches.find(x => x.id === m.id);
     if (updatedM && updatedM.status === 'finished') {
       applyMatchBonuses(m.id);
