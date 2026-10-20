@@ -25,7 +25,7 @@ export function aggregatePlayerStats({ divisionId=null, seasonId=null, teamId=nu
       goalsAgainst: 0,
       winStreak: 0, lossStreak: 0,
       divisionId: null, seasonId: null,
-      pigHistory: []
+      pigHistory: [] // Aquí guardaremos el PIG de cada partida
     });
   });
 
@@ -34,7 +34,7 @@ export function aggregatePlayerStats({ divisionId=null, seasonId=null, teamId=nu
   db.teams.forEach(team => {
     if(teamId && team.id !== teamId) return;
     if(divisionId && team.divisionId !== divisionId) return;
-    if(seasonId && team.seasonId !== seasonId) return;
+    if(seasonId && team.seasonId !== seasonId && team.seasonId) return; // Tolerancia a nulos
     (team.roster || []).forEach(r => {
       const s = map.get(r.playerId);
       if(!s) return;
@@ -47,9 +47,9 @@ export function aggregatePlayerStats({ divisionId=null, seasonId=null, teamId=nu
 
   const matches = db.matches.filter(m => {
     if(divisionId && m.divisionId !== divisionId) return false;
-    if(seasonId   && m.seasonId   !== seasonId)   return false;
+    if(seasonId   && m.seasonId   !== seasonId && m.seasonId) return false;
     return true;
-  });
+  }).sort((a,b) => (a.date || '').localeCompare(b.date || ''));
 
   matches.forEach(m => {
     (m.games || []).forEach(g => {
@@ -76,6 +76,10 @@ export function aggregatePlayerStats({ divisionId=null, seasonId=null, teamId=nu
 
         if(winnerId === pp.teamId){ s.wins++; s.winStreak++; s.lossStreak = 0; }
         else                       { s.losses++; s.lossStreak++; s.winStreak = 0; }
+
+        // GUARDAR EN EL HISTORIAL PARA EL TREND
+        const pigPartida = calculatePIG({ goals: pp.goals, assists: pp.assists, saves: pp.saves, shots: pp.shots, games: 1, lossStreak: s.lossStreak });
+        s.pigHistory.push(pigPartida);
       });
     });
 
@@ -138,9 +142,6 @@ export function computeRankings(allStats){
   };
 }
 
-// ============================================================
-// TIMELINE (JORNADA A JORNADA)
-// ============================================================
 export function getPlayerTimeline(playerId, { seasonId, divisionId } = {}) {
   const db = getDB();
   const byMatchday = {};
