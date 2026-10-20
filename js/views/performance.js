@@ -11,7 +11,6 @@ let _activeTab = 'players';
 let _selectedPlayerId = null;
 let _selectedTeamId = null;
 
-// FIX: Usar el objeto global para Chart.js instancias
 let chartStats = null;
 let chartEconomy = null;
 
@@ -131,7 +130,7 @@ function updateChartsData() {
       { label: 'Asistencias', data: timeline.map(t => t.assists), borderColor: '#6FA8FF', backgroundColor: 'rgba(111,168,255,0.1)', tension: 0.3, fill: true }
     ];
 
-    // FIX: Leer historial filtrado por matchday
+    // FIX: Leer historial y mostrar solo los que tienen matchday
     const history = (player.priceHistory || [])
       .filter(h => h.matchday)
       .sort((a,b) => a.matchday - b.matchday);
