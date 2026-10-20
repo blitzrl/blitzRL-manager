@@ -17,7 +17,8 @@ import { login, logout, getCurrentUser } from '../services/auth.js';
 import { forcePush, forcePull, getSyncState } from '../services/sync.js';
 import { applyTheme, DEFAULT_THEME, exportTheme, importTheme, themePreviewBg } from '../services/theme.js';
 import { exportLedgerTXT, applySanction } from '../services/economy.js';
-import { generatePlayers, simulateMatchdays } from '../services/simulator.js'; // IMPORTACIÓN DEL SIMULADOR
+import { generatePlayers, simulateMatchdays } from '../services/simulator.js';
+import { aggregatePlayerStats } from '../services/statistics.js';
 
 let configTab = 'general';
 let _authUser = null;
@@ -446,7 +447,7 @@ function renderGeneral(db){
     <div class="card" style="margin-top:18px;border-left:4px solid var(--accent); background:linear-gradient(90deg, rgba(111,168,255,.05), transparent)">
       <div class="card-header"><div class="card-title" style="color:var(--accent)"><span class="dot" style="color:var(--accent)">◆</span>SIMULADOR DE TEMPORADA (QA)</div></div>
       <p style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:14px">
-        Herramienta de prueba para simular jornadas, llenar equipos con jugadores de prueba y avanzar en los Playoffs de forma automática.
+        Herramienta de prueba para simular jornadas, llenar equipos con jugadores de prueba, generar fichajes automáticos y avanzar en los Playoffs.
       </p>
       <button class="btn" id="btnSimulateSeason" style="border-color:var(--accent);color:var(--accent)">🚀 SIMULAR TEMPORADA</button>
     </div>
@@ -1907,11 +1908,13 @@ function renderAI(ai){
       </div>
       <div class="field"><textarea class="textarea" id="aiPrompt" rows="14">${ai.systemPrompt||''}</textarea></div>
       
-      <div style="margin-top:18px; padding-top:18px; border-top:1px solid var(--border-soft)">
+      <div style="margin-top:18px; padding-top:18px; border-top:1px solid var(--border-soft); display:flex; flex-direction:column; gap:10px;">
         <button class="btn btn-primary" id="btnGenerateTournament" style="width:100%; padding:14px; font-size:14px; letter-spacing:.1em;">
           🎲 GENERAR TORNEO CON IA
         </button>
-        <p class="field-hint" style="text-align:center; margin-top:10px;">Extrae equipos desde una imagen o texto, y asigna escudos automáticamente.</p>
+        <button class="btn" id="btnSimulateMatchAI" style="width:100%; padding:14px; font-size:14px; letter-spacing:.1em; border-color:var(--gold); color:var(--gold);">
+          🔮 SIMULAR PARTIDO CON IA (EXPERIMENTAL)
+        </button>
       </div>
 
       <div style="display:flex;gap:8px;margin-top:18px">
@@ -2332,6 +2335,15 @@ export function bindConfigEvents(){
     }
     AITournamentWizard.open();
   });
+
+  // --- SIMULADOR DE PARTIDOS IA ---
+  document.getElementById('btnSimulateMatchAI')?.addEventListener('click', () => {
+    const db = getDB();
+    if(!db.config.ai.apiKey) {
+      return toast('⚠ Configura primero la API Key de Gemini.', 'error');
+    }
+    openSimulateMatchModal();
+  });
 }
 
 // ============================================================
@@ -2595,6 +2607,7 @@ function openSimulatorOptions() {
         <!-- Opción 1: Jornadas -->
         <div class="card" style="padding:16px;">
           <div class="card-header" style="margin-bottom:10px;"><div class="card-title">SIMULAR JORNADAS</div></div>
+          <p class="field-hint" style="margin-bottom:10px;">Esto simulará automáticamente el mercado de fichajes antes de jugar.</p>
           <div class="row">
             <div class="field" style="margin:0;">
               <label>Cantidad de jornadas a simular</label>
@@ -2693,7 +2706,387 @@ function openSimulatorOptions() {
 }
 
 // ============================================================
-// AI TOURNAMENT WIZARD (Se mantiene completo)
+// SIMULADOR DE PARTIDOS CON IA (FASE 6)
+// ============================================================
+function openSimulateMatchModal() {
+  openModal({
+    id: 'simulate-match-password',
+    title: '🔒 SIMULAR PARTIDO CON IA',
+    body: `
+      <p style="font-size:13px;color:var(--silver);line-height:1.7;margin-bottom:16px">
+        Ingresa la contraseña para acceder al simulador predictivo.
+      </p>
+      <div class="field">
+        <label>Contraseña</label>
+        <input class="input" type="password" id="simMatchPass" placeholder="••••••••" autofocus>
+      </div>
+      <div id="simMatchError" style="color:var(--danger);font-size:12px;margin-top:8px"></div>
+    `,
+    footer: `
+      <button class="btn btn-ghost" data-close>CANCELAR</button>
+      <button class="btn btn-primary" id="btnCheckMatchPass">DESBLOQUEAR</button>
+    `,
+    onMount: root => {
+      const input = root.querySelector('#simMatchPass');
+      const btn = root.querySelector('#btnCheckMatchPass');
+      const err = root.querySelector('#simMatchError');
+
+      const check = () => {
+        if (input.value === 'blitz') {
+          closeTopModal();
+          setTimeout(openSimulateMatchOptions, 200);
+        } else {
+          err.textContent = 'Contraseña incorrecta.';
+          input.value = '';
+          input.focus();
+        }
+      };
+
+      btn.addEventListener('click', check);
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') check(); });
+    }
+  });
+}
+
+function openSimulateMatchOptions() {
+  const db = getDB();
+  const division = db.divisions.find(d => d.id === state.divisionId) || db.divisions[0];
+  if (!division) return toast('Sin división activa', 'error');
+
+  // Cargar partidos de Liga
+  const leagueMatches = db.matches.filter(m => m.divisionId === division.id && m.status === 'pending').map(m => ({
+    id: m.id, type: 'league', label: `J${m.matchday} · ${m.teamAId} vs ${m.teamBId}`, matchday: m.matchday
+  }));
+
+  // Cargar partidos de Playoffs (si existen)
+  let playoffMatches = [];
+  const playoff = (db.playoffs || []).find(p => p.divisionId === division.id);
+  if (playoff && playoff.bracket && playoff.bracket.rounds) {
+    playoff.bracket.rounds.forEach(r => {
+      r.matches.forEach((m, idx) => {
+        if (!m.winnerId && m.teamA && m.teamB) {
+          playoffMatches.push({
+            id: `${r.id}:${idx}`, type: 'playoffs', label: `[${r.name}] ${m.teamA.name} vs ${m.teamB.name}`, roundId: r.id, matchIndex: idx
+          });
+        }
+      });
+    });
+  }
+
+  const allOptions = [...leagueMatches, ...playoffMatches];
+
+  if (allOptions.length === 0) {
+    return toast('No hay partidos pendientes para simular', 'info');
+  }
+
+  const optionsHTML = allOptions.map(opt => {
+    let displayLabel = opt.label;
+    if (opt.type === 'league') {
+      const tA = db.teams.find(t => t.id === opt.label.split(' vs ')[0].split(' · ')[1])?.name || '?';
+      const tB = db.teams.find(t => t.id === opt.label.split(' vs ')[1])?.name || '?';
+      displayLabel = `J${opt.matchday} · ${tA} vs ${tB}`;
+    }
+    return `<option value="${opt.id}">${displayLabel}</option>`;
+  }).join('');
+
+  openModal({
+    id: 'simulate-match-options',
+    title: '🔮 SIMULADOR PREDICTIVO',
+    wide: true,
+    body: `
+      <div style="display:flex;flex-direction:column;gap:20px;">
+        <div class="card" style="padding:16px;">
+          <div class="card-header" style="margin-bottom:10px;"><div class="card-title">CONFIGURACIÓN DEL PARTIDO</div></div>
+          
+          <div class="field">
+            <label>Selecciona el partido a simular</label>
+            <select class="select" id="simMatchSelect">
+              ${optionsHTML}
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Forzar Formato (La IA simulará este formato)</label>
+            <select class="select" id="simMatchFormat">
+              <option value="BO3">Mejor de 3 (BO3)</option>
+              <option value="BO5">Mejor de 5 (BO5)</option>
+              <option value="BO7">Mejor de 7 (BO7)</option>
+            </select>
+          </div>
+
+          <button class="btn btn-primary" id="btnRunAISimulation" style="width:100%; margin-top:10px;">🧠 ANALIZAR Y SIMULAR</button>
+        </div>
+      </div>
+      <div id="simMatchProgress" style="margin-top:20px; text-align:center; color:var(--accent); font-weight:600;"></div>
+    `,
+    footer: `<button class="btn btn-ghost" data-close>CERRAR</button>`,
+    onMount: root => {
+      const btnRun = root.querySelector('#btnRunAISimulation');
+      const progress = root.querySelector('#simMatchProgress');
+      const matchSelect = root.querySelector('#simMatchSelect');
+      const formatSelect = root.querySelector('#simMatchFormat');
+
+      btnRun.addEventListener('click', async () => {
+        const matchId = matchSelect.value;
+        const format = formatSelect.value;
+        const selectedOpt = allOptions.find(o => o.id === matchId);
+        
+        if (!selectedOpt) return toast('Partido inválido', 'error');
+
+        btnRun.disabled = true;
+        btnRun.textContent = 'ANALIZANDO...';
+        progress.textContent = 'La IA está procesando los datos...';
+
+        try {
+          // 1. Obtener Equipos
+          let teamAId, teamBId, matchday, stageName;
+          if (selectedOpt.type === 'league') {
+            const m = db.matches.find(x => x.id === selectedOpt.id);
+            teamAId = m.teamAId; teamBId = m.teamBId; matchday = m.matchday; stageName = 'Liga Regular';
+          } else {
+            const [rId, mIdx] = selectedOpt.id.split(':');
+            const round = playoff.bracket.rounds.find(r => r.id === rId);
+            const m = round.matches[+mIdx];
+            teamAId = m.teamA.teamId; teamBId = m.teamB.teamId; matchday = 'Playoffs'; stageName = round.name;
+          }
+
+          const teamA = db.teams.find(t => t.id === teamAId);
+          const teamB = db.teams.find(t => t.id === teamBId);
+
+          // 2. Obtener Tabla
+          const seasonId = db.seasons.find(s => s.active)?.id;
+          const standings = computeStandings(division.id, seasonId);
+          const standA = standings.find(s => s.teamId === teamA.id) || {};
+          const standB = standings.find(s => s.teamId === teamB.id) || {};
+
+          // 3. Obtener Stats de Jugadores
+          const allStats = aggregatePlayerStats({ divisionId: division.id, seasonId });
+
+          const getRosterWithStats = (team) => {
+            return (team.roster || []).map(r => {
+              const p = db.players.find(x => x.id === r.playerId);
+              const s = allStats.find(x => x.id === r.playerId) || { pig: 0, efficiency: 0, winStreak: 0, lossStreak: 0 };
+              return {
+                name: p.name,
+                rank: p.rank || 'Bronze',
+                pig: s.pig,
+                efficiency: s.efficiency,
+                streak: s.winStreak >= 3 ? 'Buena racha' : (s.lossStreak >= 3 ? 'Mala racha' : 'Neutra')
+              };
+            });
+          };
+
+          // 4. Historial Reciente (últimos 5 partidos)
+          const getRecentHistory = (teamId) => {
+            const recent = db.matches
+              .filter(m => m.divisionId === division.id && m.status === 'finished' && (m.teamAId === teamId || m.teamBId === teamId))
+              .sort((a, b) => b.matchday - a.matchday)
+              .slice(0, 5);
+            
+            return recent.map(m => {
+              const isA = m.teamAId === teamId;
+              let wonA = 0, wonB = 0;
+              m.games.forEach(g => { if(g.scoreA > g.scoreB) wonA++; else wonB++; });
+              const won = isA ? wonA > wonB : wonB > wonA;
+              return won ? 'V' : 'D';
+            }).join('-');
+          };
+
+          const contextData = {
+            format: format,
+            stage: stageName,
+            teamA: {
+              name: teamA.name,
+              position: standA.pos, points: standA.PTS, wins: standA.PG, losses: standA.PP,
+              goalsFor: standA.GF, goalsAgainst: standA.GC,
+              recentForm: getRecentHistory(teamA.id),
+              roster: getRosterWithStats(teamA)
+            },
+            teamB: {
+              name: teamB.name,
+              position: standB.pos, points: standB.PTS, wins: standB.PG, losses: standB.PP,
+              goalsFor: standB.GF, goalsAgainst: standB.GC,
+              recentForm: getRecentHistory(teamB.id),
+              roster: getRosterWithStats(teamB)
+            }
+          };
+
+          // Llamada a la IA
+          const result = await AIService.predictMatch(contextData);
+          
+          closeTopModal();
+          setTimeout(() => renderPredictionResult(result, contextData), 200);
+
+        } catch(e) {
+          console.error(e);
+          progress.textContent = '❌ Error: ' + e.message;
+          btnRun.disabled = false;
+          btnRun.textContent = '🧠 ANALIZAR Y SIMULAR';
+        }
+      });
+    }
+  });
+}
+
+function renderPredictionResult(result, context) {
+  const probA = result.teamA?.winProbability || 50;
+  const probB = result.teamB?.winProbability || 50;
+
+  openModal({
+    id: 'prediction-result',
+    title: '🔮 RESULTADO PREDICTIVO',
+    wide: true,
+    body: `
+      <div id="predictionCard" style="background:var(--bg-deep); padding:20px; border-radius:var(--radius); border:1px solid var(--border);">
+        <!-- HEADER -->
+        <div style="text-align:center; margin-bottom:20px;">
+          <div style="font-family:var(--font-display); letter-spacing:.2em; font-size:12px; color:var(--muted);">${context.stage} · ${context.format}</div>
+          <h2 style="font-family:var(--font-display); font-size:28px; color:var(--silver-light); margin-top:8px;">
+            ${context.teamA.name} <span style="color:var(--muted);">vs</span> ${context.teamB.name}
+          </h2>
+        </div>
+
+        <!-- PROBABILIDADES -->
+        <div style="display:flex; gap:10px; margin-bottom:20px;">
+          <div style="flex:1; text-align:center; background:var(--bg-graphite); padding:15px; border-radius:8px; border:1px solid var(--border-soft);">
+            <div style="font-size:12px; color:var(--muted); margin-bottom:5px;">${context.teamA.name}</div>
+            <div style="font-family:var(--font-display); font-size:32px; color:var(--accent);">${probA}%</div>
+            <div style="height:6px; background:var(--border); border-radius:3px; margin-top:10px; overflow:hidden;">
+              <div style="height:100%; width:${probA}%; background:var(--accent);"></div>
+            </div>
+          </div>
+          <div style="flex:1; text-align:center; background:var(--bg-graphite); padding:15px; border-radius:8px; border:1px solid var(--border-soft);">
+            <div style="font-size:12px; color:var(--muted); margin-bottom:5px;">${context.teamB.name}</div>
+            <div style="font-family:var(--font-display); font-size:32px; color:var(--gold);">${probB}%</div>
+            <div style="height:6px; background:var(--border); border-radius:3px; margin-top:10px; overflow:hidden;">
+              <div style="height:100%; width:${probB}%; background:var(--gold);"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RESULTADO -->
+        <div style="text-align:center; background:linear-gradient(180deg, rgba(111,168,255,.1), transparent); padding:20px; border-radius:8px; margin-bottom:20px; border:1px solid rgba(111,168,255,.3);">
+          <div style="font-size:12px; color:var(--muted); letter-spacing:.1em;">RESULTADO PREDICHO</div>
+          <div style="font-family:var(--font-display); font-size:48px; color:var(--silver-light); margin:10px 0;">${result.predictedSeriesScore}</div>
+          <div style="font-size:14px; color:var(--success); font-weight:600;">Ganador: ${result.predictedWinner}</div>
+        </div>
+
+        <!-- MVP -->
+        <div style="display:flex; align-items:center; gap:15px; background:var(--bg-graphite); padding:15px; border-radius:8px; margin-bottom:20px; border:1px solid var(--gold);">
+          <div style="font-size:32px;">🏆</div>
+          <div>
+            <div style="font-size:11px; color:var(--gold); letter-spacing:.1em;">MVP DEL PARTIDO</div>
+            <div style="font-size:16px; color:var(--silver-light); font-weight:600;">${result.mvp?.name || '—'} <span style="color:var(--muted); font-size:12px;">(${result.mvp?.team || '—'})</span></div>
+            <div style="font-size:12px; color:var(--muted); margin-top:3px;">${result.mvp?.reason || ''}</div>
+          </div>
+        </div>
+
+        <!-- GOLES -->
+        <div style="margin-bottom:20px;">
+          <div style="font-size:11px; color:var(--muted); letter-spacing:.1em; margin-bottom:10px;">GOLEADORES SIMULADOS</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            ${(result.scorers || []).map(s => `
+              <div style="display:flex; justify-content:space-between; font-size:12px; padding:8px; background:var(--bg-elev); border-radius:6px; border:1px solid var(--border-soft);">
+                <span style="color:var(--silver-light);">${s.name}</span>
+                <span style="color:var(--accent); font-weight:600;">${s.goals}G ${s.assists}A</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- PROS Y CONTRAS -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:20px;">
+          <div style="background:var(--bg-graphite); padding:15px; border-radius:8px; border-left:4px solid var(--accent);">
+            <div style="font-size:12px; font-weight:600; color:var(--accent); margin-bottom:8px;">${context.teamA.name}</div>
+            <div style="font-size:11px; color:var(--success); font-weight:600;">PROS</div>
+            <ul style="font-size:11px; color:var(--silver); margin:5px 0 10px 15px; padding:0;">
+              ${(result.teamA?.pros || []).map(p => `<li>${p}</li>`).join('')}
+            </ul>
+            <div style="font-size:11px; color:var(--danger); font-weight:600;">CONTRAS</div>
+            <ul style="font-size:11px; color:var(--silver); margin:5px 0 0 15px; padding:0;">
+              ${(result.teamA?.cons || []).map(c => `<li>${c}</li>`).join('')}
+            </ul>
+          </div>
+          <div style="background:var(--bg-graphite); padding:15px; border-radius:8px; border-left:4px solid var(--gold);">
+            <div style="font-size:12px; font-weight:600; color:var(--gold); margin-bottom:8px;">${context.teamB.name}</div>
+            <div style="font-size:11px; color:var(--success); font-weight:600;">PROS</div>
+            <ul style="font-size:11px; color:var(--silver); margin:5px 0 10px 15px; padding:0;">
+              ${(result.teamB?.pros || []).map(p => `<li>${p}</li>`).join('')}
+            </ul>
+            <div style="font-size:11px; color:var(--danger); font-weight:600;">CONTRAS</div>
+            <ul style="font-size:11px; color:var(--silver); margin:5px 0 0 15px; padding:0;">
+              ${(result.teamB?.cons || []).map(c => `<li>${c}</li>`).join('')}
+            </ul>
+          </div>
+        </div>
+
+        <!-- ANÁLISIS DE PLAYOFFS -->
+        <div style="background:var(--bg-elev); padding:15px; border-radius:8px; border:1px solid var(--border-soft); margin-bottom:20px;">
+          <div style="font-size:11px; color:var(--muted); letter-spacing:.1em; margin-bottom:5px;">ESCENARIOS DE PLAYOFFS</div>
+          <div style="font-size:12px; color:var(--silver); line-height:1.6;">${result.playoffScenarios || '—'}</div>
+        </div>
+
+        <!-- FIRMA -->
+        <div style="text-align:center; font-size:10px; color:var(--muted); opacity:0.5;">
+          Generado por ZENITH IA · Simulación no oficial
+        </div>
+      </div>
+
+      <!-- REPORTE DE TEXTO -->
+      <div style="margin-top:20px;">
+        <label style="font-size:11px; color:var(--muted); text-transform:uppercase; font-weight:600;">Informe Completo (Texto)</label>
+        <textarea class="textarea" id="predictionReportText" rows="8" style="margin-top:5px; font-size:12px; background:var(--bg-graphite); color:var(--silver);" readonly>${result.reportText || ''}</textarea>
+      </div>
+    `,
+    footer: `
+      <button class="btn btn-ghost" data-close>CERRAR</button>
+      <button class="btn" id="btnDownloadPredictionImg" style="border-color:var(--accent); color:var(--accent);">⬇ DESCARGAR IMAGEN</button>
+      <button class="btn btn-primary" id="btnCopyPredictionText">📋 COPIAR TEXTO</button>
+    `,
+    onMount: root => {
+      // Descargar Imagen (html2canvas)
+      root.querySelector('#btnDownloadPredictionImg').addEventListener('click', async () => {
+        const btn = root.querySelector('#btnDownloadPredictionImg');
+        btn.textContent = 'GENERANDO...';
+        btn.disabled = true;
+
+        // Cargar html2canvas dinámicamente si no está
+        if (typeof html2canvas === 'undefined') {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+          document.head.appendChild(script);
+          await new Promise(resolve => script.onload = resolve);
+        }
+
+        const card = root.querySelector('#predictionCard');
+        html2canvas(card, { backgroundColor: '#050505', scale: 2 }).then(canvas => {
+          const link = document.createElement('a');
+          link.download = `ZENITH_PREDICTION_${Date.now()}.png`;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+          btn.textContent = '⬇ DESCARGAR IMAGEN';
+          btn.disabled = false;
+        }).catch(err => {
+          console.error(err);
+          toast('Error generando imagen', 'error');
+          btn.textContent = '⬇ DESCARGAR IMAGEN';
+          btn.disabled = false;
+        });
+      });
+
+      // Copiar Texto
+      root.querySelector('#btnCopyPredictionText').addEventListener('click', () => {
+        const ta = root.querySelector('#predictionReportText');
+        ta.select();
+        document.execCommand('copy');
+        toast('Informe copiado al portapapeles', 'success');
+      });
+    }
+  });
+}
+
+// ============================================================
+// AI TOURNAMENT WIZARD
 // ============================================================
 const AITournamentWizard = {
   state: {
@@ -3331,7 +3724,7 @@ const AITournamentWizard = {
               seasonId: seasonId,
               roster: [],
               trophies: [],
-              money: 0
+              money: 100000 
             });
           });
         });
