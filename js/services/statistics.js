@@ -25,7 +25,7 @@ export function aggregatePlayerStats({ divisionId=null, seasonId=null, teamId=nu
       goalsAgainst: 0,
       winStreak: 0, lossStreak: 0,
       divisionId: null, seasonId: null,
-      pigHistory: [] // Aquí guardaremos el PIG de cada partida
+      pigHistory: []
     });
   });
 
@@ -34,7 +34,7 @@ export function aggregatePlayerStats({ divisionId=null, seasonId=null, teamId=nu
   db.teams.forEach(team => {
     if(teamId && team.id !== teamId) return;
     if(divisionId && team.divisionId !== divisionId) return;
-    if(seasonId && team.seasonId !== seasonId && team.seasonId) return; // Tolerancia a nulos
+    if(seasonId && team.seasonId !== seasonId && team.seasonId) return;
     (team.roster || []).forEach(r => {
       const s = map.get(r.playerId);
       if(!s) return;
@@ -77,7 +77,6 @@ export function aggregatePlayerStats({ divisionId=null, seasonId=null, teamId=nu
         if(winnerId === pp.teamId){ s.wins++; s.winStreak++; s.lossStreak = 0; }
         else                       { s.losses++; s.lossStreak++; s.winStreak = 0; }
 
-        // GUARDAR EN EL HISTORIAL PARA EL TREND
         const pigPartida = calculatePIG({ goals: pp.goals, assists: pp.assists, saves: pp.saves, shots: pp.shots, games: 1, lossStreak: s.lossStreak });
         s.pigHistory.push(pigPartida);
       });
@@ -142,30 +141,51 @@ export function computeRankings(allStats){
   };
 }
 
+// FIX: La línea de tiempo ahora agrupa por partido real en lugar de solo matchday
 export function getPlayerTimeline(playerId, { seasonId, divisionId } = {}) {
   const db = getDB();
-  const byMatchday = {};
+  const timeline = [];
   
   db.matches
     .filter(m => (!seasonId || m.seasonId === seasonId) && (!divisionId || m.divisionId === divisionId))
     .forEach(m => {
       (m.games || []).forEach(g => {
         (g.players || []).filter(p => p.playerId === playerId).forEach(p => {
-          if (!byMatchday[m.matchday]) byMatchday[m.matchday] = { matchday: m.matchday, goals: 0, assists: 0, saves: 0, shots: 0 };
-          byMatchday[m.matchday].goals   += p.goals   || 0;
-          byMatchday[m.matchday].assists += p.assists || 0;
-          byMatchday[m.matchday].saves   += p.saves   || 0;
-          byMatchday[m.matchday].shots   += p.shots   || 0;
+          timeline.push({
+            matchday: m.matchday,
+            divisionId: m.divisionId,
+            date: m.date,
+            goals: p.goals || 0,
+            assists: p.assists || 0,
+            saves: p.saves || 0,
+            shots: p.shots || 0
+          });
         });
       });
     });
     
-  return Object.values(byMatchday).sort((a,b) => a.matchday - b.matchday);
+  // Agrupar para no repetir la misma jornada
+  const grouped = {};
+  timeline.forEach(t => {
+    const key = `${t.divisionId}_${t.matchday}`;
+    if (!grouped[key]) grouped[key] = { ...t };
+    else {
+      grouped[key].goals += t.goals;
+      grouped[key].assists += t.assists;
+      grouped[key].saves += t.saves;
+      grouped[key].shots += t.shots;
+    }
+  });
+  
+  return Object.values(grouped).sort((a,b) => {
+    if (a.date && b.date) return a.date.localeCompare(b.date);
+    return a.matchday - b.matchday;
+  });
 }
 
 export function getTeamTimeline(teamId, { seasonId, divisionId } = {}) {
   const db = getDB();
-  const byMatchday = {};
+  const timeline = {};
   
   db.matches
     .filter(m => (!seasonId || m.seasonId === seasonId) && (!divisionId || m.divisionId === divisionId))
@@ -173,14 +193,14 @@ export function getTeamTimeline(teamId, { seasonId, divisionId } = {}) {
       if (m.teamAId !== teamId && m.teamBId !== teamId) return;
       (m.games || []).forEach(g => {
         (g.players || []).filter(p => p.teamId === teamId).forEach(p => {
-          if (!byMatchday[m.matchday]) byMatchday[m.matchday] = { matchday: m.matchday, goals: 0, assists: 0, saves: 0, shots: 0 };
-          byMatchday[m.matchday].goals   += p.goals   || 0;
-          byMatchday[m.matchday].assists += p.assists || 0;
-          byMatchday[m.matchday].saves   += p.saves   || 0;
-          byMatchday[m.matchday].shots   += p.shots   || 0;
+          if (!timeline[m.matchday]) timeline[m.matchday] = { matchday: m.matchday, goals: 0, assists: 0, saves: 0, shots: 0 };
+          timeline[m.matchday].goals   += p.goals   || 0;
+          timeline[m.matchday].assists += p.assists || 0;
+          timeline[m.matchday].saves   += p.saves   || 0;
+          timeline[m.matchday].shots   += p.shots   || 0;
         });
       });
     });
     
-  return Object.values(byMatchday).sort((a,b) => a.matchday - b.matchday);
+  return Object.values(timeline).sort((a,b) => a.matchday - b.matchday);
 }
