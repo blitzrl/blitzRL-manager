@@ -457,6 +457,8 @@ function renderThemeTab(db){
     : DEFAULT_THEME.background.gradientColors;
   const angle = (typeof bg.gradientAngle === 'number') ? bg.gradientAngle : 135;
 
+  window.__themeEditingBanner = db.transferBannerBg || '';
+
   return `
     <div class="card" style="margin-bottom:18px">
       <div class="card-header"><div class="card-title"><span class="dot">◆</span>IDENTIDAD DE MARCA</div></div>
@@ -489,6 +491,27 @@ function renderThemeTab(db){
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button type="button" class="btn btn-sm" id="themeLogoUpload">📤 SUBIR LOGO</button>
           <button type="button" class="btn btn-sm btn-danger" id="themeLogoRemove">🗑 QUITAR LOGO</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- NUEVO: BANNER DE FONDO -->
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><div class="card-title"><span class="dot">◆</span>BANNER DE FICHajes (NOTICIAS)</div></div>
+      <p class="field-hint" style="margin-bottom:12px">Esta imagen de fondo se usará al generar automáticamente la noticia de un fichaje.</p>
+      
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px">
+        <div id="themeBannerPreview" style="width:200px;height:80px;flex-shrink:0;border-radius:8px;background:var(--bg-elev);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden">
+          ${window.__themeEditingBanner
+            ? `<img src="${window.__themeEditingBanner}" style="width:100%;height:100%;object-fit:cover">`
+            : `<span style="color:var(--muted);font-size:11px;text-align:center">SIN BANNER</span>`}
+        </div>
+        <div style="flex:1;min-width:0">
+          <input type="file" id="themeBannerInput" accept="image/*" hidden>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn btn-sm" id="themeBannerUpload">📤 SUBIR BANNER</button>
+            <button type="button" class="btn btn-sm btn-danger" id="themeBannerRemove">🗑 QUITAR BANNER</button>
+          </div>
         </div>
       </div>
     </div>
@@ -715,6 +738,28 @@ function bindThemeTab(){
   const currentTheme = db.config.theme?.active || getDefaultTheme();
   window.__themeEditingLogo = currentTheme.logo || '';
 
+  // NUEVO: BANNER
+  const bannerInput = document.getElementById('themeBannerInput');
+  document.getElementById('themeBannerUpload')?.addEventListener('click', () => bannerInput?.click());
+  bannerInput?.addEventListener('change', async () => {
+    const f = bannerInput.files[0];
+    if (!f) return;
+    try {
+      const dataUrl = await compressImage(f, 1200, 500);
+      window.__themeEditingBanner = dataUrl;
+      const preview = document.getElementById('themeBannerPreview');
+      if (preview) preview.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover">`;
+      toast('Banner cargado. No olvides guardar.', 'success');
+    } catch(e) { toast('Error procesando banner', 'error'); }
+  });
+  document.getElementById('themeBannerRemove')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    window.__themeEditingBanner = '';
+    const preview = document.getElementById('themeBannerPreview');
+    if (preview) preview.innerHTML = `<span style="color:var(--muted);font-size:11px;text-align:center">SIN BANNER</span>`;
+    toast('Banner quitado. No olvides guardar.', 'info');
+  });
+
   document.querySelectorAll('input[name="themeBgType"]').forEach(radio => {
     radio.addEventListener('change', () => {
       const type = document.querySelector('input[name="themeBgType"]:checked')?.value;
@@ -819,8 +864,9 @@ function bindThemeTab(){
     if (!confirm('¿Restaurar todos los valores por defecto del tema?')) return;
     const def = getDefaultTheme();
     window.__themeEditingLogo = def.logo || '';
+    window.__themeEditingBanner = ''; // Limpiar banner
     const db2 = getDB();
-    const fake = { ...db2, config: { ...db2.config, theme: { active: def, presets: db2.config.theme?.presets || [] } } };
+    const fake = { ...db2, config: { ...db2.config, theme: { active: def, presets: db2.config.theme?.presets || [] } }, transferBannerBg: '' };
     document.getElementById('configContent').innerHTML = renderThemeTab(fake);
     bindThemeTab();
     applyTheme(def);
@@ -839,11 +885,14 @@ function bindThemeTab(){
         if (prevName && prevName !== 'Zenith Default') t.name = prevName;
         else t.name = 'Custom';
         d.config.theme.active = t;
+        
+        // Guardar banner
+        d.transferBannerBg = window.__themeEditingBanner || '';
       });
 
       applyTheme(t);
-      toast('✅ Tema guardado y aplicado. Se publicará automáticamente.', 'success');
-      logChange('update', 'theme', null, 'Tema actualizado');
+      toast('✅ Tema y banner guardados y aplicados. Se publicarán automáticamente.', 'success');
+      logChange('update', 'theme', null, 'Tema y banner actualizados');
 
       const db2 = getDB();
       document.getElementById('configContent').innerHTML = renderThemeTab(db2);
@@ -928,7 +977,7 @@ function bindThemeTab(){
       const imported = await importTheme(f);
       window.__themeEditingLogo = imported.logo || '';
       const db2 = getDB();
-      const fake = { ...db2, config: { ...db2.config, theme: { active: imported, presets: db2.config.theme?.presets || [] } } };
+      const fake = { ...db2, config: { ...db2.config, theme: { active: imported, presets: db2.config.theme?.presets || [] } }, transferBannerBg: window.__themeEditingBanner };
       document.getElementById('configContent').innerHTML = renderThemeTab(fake);
       bindThemeTab();
       applyTheme(imported);
@@ -947,7 +996,7 @@ function bindThemeTab(){
       if (!preset) return;
       window.__themeEditingLogo = preset.data.logo || '';
       const db2 = getDB();
-      const fake = { ...db2, config: { ...db2.config, theme: { active: { ...preset.data, name: preset.name }, presets: db2.config.theme?.presets || [] } } };
+      const fake = { ...db2, config: { ...db2.config, theme: { active: { ...preset.data, name: preset.name }, presets: db2.config.theme?.presets || [] } }, transferBannerBg: window.__themeEditingBanner };
       document.getElementById('configContent').innerHTML = renderThemeTab(fake);
       bindThemeTab();
       applyTheme(preset.data);
@@ -2480,7 +2529,7 @@ function esc(str){
 }
 
 // ============================================================
-// AI TOURNAMENT WIZARD (SIN CAMBIOS)
+// AI TOURNAMENT WIZARD
 // ============================================================
 const AITournamentWizard = {
   state: {
