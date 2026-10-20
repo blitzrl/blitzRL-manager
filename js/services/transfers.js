@@ -57,6 +57,18 @@ export function doFreeAgent(playerId){
       if(!pl) return;
       const ft = fromTeam ? d.teams.find(t => t.id === fromTeam.id) : null;
 
+      // GUARDAR HISTORIAL DE CARRERA (FIX)
+      if (ft) {
+        pl.history = pl.history || [];
+        pl.history.unshift({
+          seasonName: d.seasons.find(s=>s.active)?.name || 'Actual',
+          divisionName: d.divisions.find(x => x.id === ft.divisionId)?.name || '—',
+          teamName: ft.name,
+          role: 'AGENTE LIBRE',
+          date: Date.now()
+        });
+      }
+
       const s = pl.seasonStats || {};
       const hasStats = (s.goals || 0) + (s.assists || 0) + (s.saves || 0) + (s.shots || 0) > 0;
       if (hasStats && ft){
@@ -69,7 +81,6 @@ export function doFreeAgent(playerId){
 
       if (ft) ft.roster = (ft.roster || []).filter(r => r.playerId !== playerId);
       
-      // FIX: Actualizar status y divisionId
       pl.status = 'free_agent';
       pl.divisionId = null;
       pl.pendingTeamId = null;
@@ -121,6 +132,16 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset, customPrice
       const ft = fromTeam ? d.teams.find(t => t.id === fromTeam.id) : null;
       if (!pl || !tt) return;
 
+      // GUARDAR HISTORIAL DE CARRERA (FIX)
+      pl.history = pl.history || [];
+      pl.history.unshift({
+        seasonName: d.seasons.find(s=>s.active)?.name || 'Actual',
+        divisionName: d.divisions.find(x => x.id === tt.divisionId)?.name || '—',
+        teamName: tt.name,
+        role: goesPending ? 'PENDIENTE' : 'TRANSFERENCIA',
+        date: Date.now()
+      });
+
       if (shouldReset){
         const s = pl.seasonStats || {};
         pl.careerSnapshots.push({
@@ -135,7 +156,6 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset, customPrice
 
       if (ft) ft.roster = (ft.roster || []).filter(r => r.playerId !== playerId);
 
-      // FIX: Actualizar status, divisionId y pendingTeamId
       pl.divisionId = targetTeam.divisionId;
       if (goesPending){
         pl.status = 'pending';
@@ -146,11 +166,9 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset, customPrice
         tt.roster.push({ playerId, role: 'SUPLENTE' });
       }
 
-      // Actualizar Saldos
       tt.money = (tt.money || 0) - price;
       if (ft) ft.money = (ft.money || 0) + price;
 
-      // Registrar en Ledger
       d.economyLedger ||= [];
       d.economyLedger.unshift({
         id: uid('led'), ts: Date.now(), type: 'transfer', teamId: tt.id, teamName: tt.name,
