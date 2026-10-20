@@ -107,14 +107,14 @@ export function bindNewsEvents(){
   });
   document.getElementById('btnNewAdvancedNews')?.addEventListener('click', ()=>{
     if(isViewMode()) return toast('📖 Estás en modo lectura.', 'error');
-    openAdvancedNewsEditor();
+    openAdvancedNewsEditor(null, null);
   });
 
   document.querySelectorAll('[data-edit-news]').forEach(b => {
     b.addEventListener('click', (e)=>{
       e.stopPropagation();
       if(isViewMode()) return toast('📖 Estás en modo lectura.', 'error');
-      openAdvancedNewsEditor(b.dataset.editNews);
+      openAdvancedNewsEditor(b.dataset.editNews, null);
     });
   });
 
@@ -257,9 +257,9 @@ function openNewsForm(){
 }
 
 // ============================================================
-// NOTICIA AVANZADA
+// NOTICIA AVANZADA (Exportada y con precarga)
 // ============================================================
-function openAdvancedNewsEditor(newsId = null){
+export function openAdvancedNewsEditor(newsId = null, prefillData = null){
   const db = getDB();
   const existing = newsId ? db.news.find(n => n.id === newsId) : null;
 
@@ -272,19 +272,26 @@ function openAdvancedNewsEditor(newsId = null){
       initialCategory = '__custom';
       initialCustomCategory = existing.customCategory || existing.category;
     }
+  } else if (prefillData && prefillData.category) {
+    if (KNOWN_CATEGORIES.includes(prefillData.category)) {
+      initialCategory = prefillData.category;
+    } else {
+      initialCategory = '__custom';
+      initialCustomCategory = prefillData.category;
+    }
   }
 
   const state = {
     id: existing?.id || null,
-    title: existing?.title || '',
+    title: prefillData?.title || existing?.title || '',
     category: initialCategory,
     customCategory: initialCustomCategory,
-    banner: existing?.banner || '',
-    date: existing?.date || new Date().toISOString().slice(0,10),
-    goldenFrame: !!existing?.goldenFrame,
-    pinned: !!existing?.pinned,
-    featured: !!existing?.featured,
-    blocks: existing ? JSON.parse(JSON.stringify(existing.blocks || [])) : []
+    banner: prefillData?.banner || existing?.banner || '',
+    date: prefillData?.date || existing?.date || new Date().toISOString().slice(0,10),
+    goldenFrame: existing?.goldenFrame || false,
+    pinned: existing?.pinned || false,
+    featured: existing?.featured || false,
+    blocks: existing ? JSON.parse(JSON.stringify(existing.blocks || [])) : (prefillData?.blocks || [])
   };
 
   // ==========================================================
