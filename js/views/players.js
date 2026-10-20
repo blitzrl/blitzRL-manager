@@ -1,7 +1,7 @@
 import { getDB } from '../services/storage.js';
 import { aggregatePlayerStats, computeRankings } from '../services/statistics.js';
 import { streakLabel } from '../services/pig.js';
-import { getNationFlag, getNationName, platformIcon, getRankColor, getRankLabel } from '../data/nations.js'; // FIX: getRankLabel
+import { getNationFlag, getNationName, platformIcon, getRankColor, getRankLabel } from '../data/nations.js';
 import { openPlayerForm } from './teams.js';
 import { openModal } from '../services/ui.js';
 import { renderVitrina } from '../services/trophies.js';
@@ -142,13 +142,16 @@ function playerRow(p, i, allStats){
   </tr>`;
 }
 
+// ============================================================
+// PERFIL
+// ============================================================
 function playerProfileView(p){
   const db = getDB();
   const allStats = aggregatePlayerStats();
   const stats = allStats.find(s => s.id === p.id) || { games:0, goals:0, assists:0, saves:0, shots:0, pig:0, efficiency:0, efficiencyOffense:0, efficiencyDefense:0, goalsPerMatch:0, assistsPerMatch:0, savesPerMatch:0, shotsPerMatch:0, pigTrend:'—' };
   
   const rankings = computeRankings(allStats);
-  const streak = streakLabel(stats); 
+  const streak = streakLabel(stats);
   const flag = p.nationalityCode ? getNationFlag(p.nationalityCode) : '';
   const nationName = p.nationalityCode ? getNationName(p.nationalityCode) : '';
   const rankColor = getRankColor(p.rank, p.rankLevel);
@@ -158,13 +161,10 @@ function playerProfileView(p){
 
   const priceData = calculatePlayerPrice(p, stats, db.config.economy);
 
-  let divId = p.divisionId;
-  if(!divId){
-    const t = db.teams.find(t => (t.roster || []).some(r => r.playerId === p.id));
-    if(t) divId = t.divisionId;
-  }
-  const div = divId ? db.divisions.find(d => d.id === divId) : null;
-
+  // FIX DEFINITIVO: Buscar equipo actual directamente en la DB, ignorando stats viejos
+  const currentTeam = db.teams.find(t => (t.roster || []).some(r => r.playerId === p.id));
+  const div = currentTeam ? db.divisions.find(d => d.id === currentTeam.divisionId) : null;
+  
   const rankOf = (map) => map?.get(p.id) || '—';
   const totalRanked = rankings.total || 1;
 
@@ -175,8 +175,8 @@ function playerProfileView(p){
     streakBadge = `<span class="badge badge-loss" style="font-size:12px;padding:4px 10px;">📉 MALA RACHA (${stats.lossStreak})</span>`;
   }
   
-  const isFreeAgent = p.status === 'free_agent' || !stats.teamId || stats.teamId === 'null';
-  const teamDisplay = isFreeAgent ? '<span style="color:var(--gold)">AGENTE LIBRE</span>' : esc(stats.teamName || 'Agente libre');
+  // FIX DEFINITIVO: Si no hay currentTeam, es Agente Libre.
+  const teamDisplay = currentTeam ? esc(currentTeam.name) : '<span style="color:var(--gold)">AGENTE LIBRE</span>';
 
   const trendSymbol = stats.pigTrend || '—';
 
@@ -271,6 +271,7 @@ function playerProfileView(p){
 
     ${trophies.length > 0 ? `<div class="card" style="margin-top:18px">${renderVitrina(trophies)}</div>` : ''}
 
+    <!-- FIX: Historial de carrera ahora se llena desde transfers.js -->
     <div class="card" style="margin-top:18px">
       <div class="card-header"><div class="card-title"><span class="dot">◆</span>HISTORIAL DE CARRERA</div></div>
       ${(p.history && p.history.length) ? p.history.map(h=>`
