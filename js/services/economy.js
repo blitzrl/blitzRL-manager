@@ -189,7 +189,6 @@ export function applySeasonBonuses(d, divisionStatus, movements, seasonId) {
 }
 
 export function recordTransaction({ teamId, type, amount, reason, meta = {} }) {
-  const db = getDB();
   mutate(d => {
     recordTransactionInDB(d, { teamId, type, amount, reason, meta });
   });
