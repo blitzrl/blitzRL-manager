@@ -10,7 +10,7 @@ import {
   listExistingTrophies, removeTrophyFromTeam, removeTrophyFromPlayer
 } from '../services/trophies.js';
 import { canFinishSeason, finishSeason, resetDivisions } from '../services/seasons.js';
-import { uid, getDefaultWidgets, getWidgetType, getDefaultTheme } from '../data/database.js';
+import { uid, getDefaultWidgets, getWidgetType, getDefaultTheme, ECONOMY_DEFAULTS } from '../data/database.js';
 import { state } from '../state.js';
 import { getSupabase, testConnection, downloadAll } from '../services/supabase.js';
 import { login, logout, getCurrentUser } from '../services/auth.js';
@@ -179,7 +179,7 @@ export function openLoginModal(){
             }
           }
 
-          if (configTab === 'data' || configTab === 'theme') {
+          if (configTab === 'data' || configTab === 'theme' || configTab === 'economy') {
             const dbCurr = getDB();
             const ai = dbCurr.config.ai || {};
             document.getElementById('configContent').innerHTML = renderConfigTab(configTab, dbCurr, ai);
@@ -315,6 +315,7 @@ export function configView(){
       <button class="config-tab ${configTab==='movements'?'active':''}" data-config-tab="movements">🔀 Movimientos</button>
       <button class="config-tab ${configTab==='trophies'?'active':''}" data-config-tab="trophies">🏆 Trofeos</button>
       <button class="config-tab ${configTab==='ai'?'active':''}" data-config-tab="ai">🤖 IA</button>
+      <button class="config-tab ${configTab==='economy'?'active':''}" data-config-tab="economy">💰 Economía</button>
       <button class="config-tab ${configTab==='data'?'active':''}" data-config-tab="data">💾 Datos</button>
     </div>
 
@@ -331,6 +332,7 @@ function renderConfigTab(tab, db, ai){
     case 'movements': return renderMovements(db);
     case 'trophies': return renderTrophiesConfig(db);
     case 'ai': return renderAI(ai);
+    case 'economy': return renderEconomyTab(db);
     case 'data': return renderData();
     default: return '';
   }
@@ -1047,6 +1049,201 @@ function bindGradientStops(){
       if (addBtn) addBtn.disabled = list.querySelectorAll('.theme-stop-row').length >= 5;
       applyThemePreview();
     });
+  });
+}
+
+// ============================================================
+// ECONOMÍA
+// ============================================================
+function renderEconomyTab(db){
+  const eco = db.config.economy || ECONOMY_DEFAULTS;
+  const RANKS = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Champion', 'Grand Champion', 'SSL'];
+
+  return `
+    <div class="grid grid-2">
+      <!-- GENERAL -->
+      <div class="card">
+        <div class="card-header"><div class="card-title"><span class="dot">◆</span>REGLAS GENERALES</div></div>
+        
+        <div class="field">
+          <label><input type="checkbox" id="ecoEnabled" ${eco.enabled ? 'checked' : ''}> Economía activada</label>
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="ecoAllowDebt" ${eco.allowDebt ? 'checked' : ''}> Permitir deudas (saldo negativo)</label>
+        </div>
+        
+        <div class="row">
+          <div class="field">
+            <label>Multiplicador PIG (×)</label>
+            <input class="input" type="number" id="ecoPigMult" value="${eco.pigMultiplier}">
+          </div>
+          <div class="field">
+            <label>Piso del PIG Negativo</label>
+            <input class="input" type="number" id="ecoPigFloor" value="${eco.pigNegativeFloor}">
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label><input type="checkbox" id="ecoPigNeg" ${eco.pigAllowNegative ? 'checked' : ''}> Permitir PIG Negativo</label>
+          </div>
+          <div class="field">
+            <label>Penalización por tiro fallado</label>
+            <input class="input" type="number" step="0.1" id="ecoMissPenalty" value="${eco.missedShotsPenalty}">
+          </div>
+        </div>
+      </div>
+
+      <!-- SANCIONES -->
+      <div class="card">
+        <div class="card-header"><div class="card-title"><span class="dot">◆</span>CATÁLOGO DE SANCIONES</div></div>
+        <p class="field-hint" style="margin-bottom:12px">Monto por defecto al aplicar una sanción desde el panel de equipo.</p>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${(eco.sanctions?.reasons || []).map(r => `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;background:var(--bg-elev);border-radius:6px;border:1px solid var(--border-soft)">
+              <span style="font-size:12.5px;color:var(--silver-light)">${esc(r.label)}</span>
+              <input class="input" type="number" data-sanction-id="${r.id}" value="${r.defaultAmount}" style="width:120px;padding:6px 10px!important">
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- PRECIOS BASE -->
+    <div class="card" style="margin-top:18px">
+      <div class="card-header"><div class="card-title"><span class="dot">◆</span>PRECIOS BASE POR RANGO Y NIVEL</div></div>
+      <div class="eco-grid-4">
+        <div class="eco-cell head">RANGO</div>
+        <div class="eco-cell head">NIVEL 1</div>
+        <div class="eco-cell head">NIVEL 2</div>
+        <div class="eco-cell head">NIVEL 3</div>
+        ${RANKS.map(rank => `
+          <div class="eco-cell bold">${rank}</div>
+          <div class="eco-cell"><input class="input" type="number" data-eco-rank="${rank}" data-eco-level="1" value="${eco.basePriceByRank?.[rank]?.[1] ?? 0}"></div>
+          <div class="eco-cell"><input class="input" type="number" data-eco-rank="${rank}" data-eco-level="2" value="${eco.basePriceByRank?.[rank]?.[2] ?? 0}"></div>
+          <div class="eco-cell"><input class="input" type="number" data-eco-rank="${rank}" data-eco-level="3" value="${eco.basePriceByRank?.[rank]?.[3] ?? 0}"></div>
+        `).join('')}
+      </div>
+    </div>
+
+    <!-- BONUS -->
+    <div class="card" style="margin-top:18px">
+      <div class="card-header"><div class="card-title"><span class="dot">◆</span>BONUS ECONÓMICOS</div></div>
+      <div class="grid grid-2">
+        <div>
+          <h4 style="font-size:11px;color:var(--accent);letter-spacing:.1em;margin-bottom:10px">VICTORIAS</h4>
+          <div class="field"><label>Victoria Simple (✅)</label><input class="input" type="number" id="ecoWinSimple" value="${eco.bonuses.winSimple.amount}"></div>
+          <div class="field"><label>Victoria Complicada (⚔️)</label><input class="input" type="number" id="ecoWinHard" value="${eco.bonuses.winHard.amount}"></div>
+          <div class="field"><label>Victoria Humillante (😂)</label><input class="input" type="number" id="ecoWinHum" value="${eco.bonuses.winHumiliating.amount}"></div>
+        </div>
+        <div>
+          <h4 style="font-size:11px;color:var(--accent);letter-spacing:.1em;margin-bottom:10px">TEMPORADA</h4>
+          <div class="field"><label>Clasificar a Playoffs</label><input class="input" type="number" id="ecoQualify" value="${eco.bonuses.qualifyPlayoffs.amount}"></div>
+          <div class="field"><label>Pasar de Ronda</label><input class="input" type="number" id="ecoPassRound" value="${eco.bonuses.passRound.amount}"></div>
+          <div class="field"><label>Ganar la Liga</label><input class="input" type="number" id="ecoWinLeague" value="${eco.bonuses.winLeague.amount}"></div>
+          <div class="field"><label>Ascenso de División</label><input class="input" type="number" id="ecoPromote" value="${eco.bonuses.promote.amount}"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- UMBRALES HUMILLACIÓN -->
+    <div class="card" style="margin-top:18px">
+      <div class="card-header"><div class="card-title"><span class="dot">◆</span>UMBRALES DE HUMILLACIÓN (POR FORMATO)</div></div>
+      <p class="field-hint" style="margin-bottom:12px">Margen de victoria simple, diferencia de goles promedio para humillar, y cantidad de shutouts.</p>
+      
+      <div class="grid grid-3">
+        ${['BO3','BO5','BO7'].map(bo => `
+          <div style="background:var(--bg-elev);border:1px solid var(--border-soft);padding:12px;border-radius:8px">
+            <h5 style="font-size:12px;font-weight:700;color:var(--gold);margin-bottom:10px">${bo}</h5>
+            <div class="field"><label>Margen Simple</label><input class="input" type="number" id="thr${bo}_simple" value="${eco.bonuses.thresholds?.[bo]?.simpleMargin ?? 2}"></div>
+            <div class="field"><label>Dif. Goles Humillante</label><input class="input" type="number" id="thr${bo}_goal" value="${eco.bonuses.thresholds?.[bo]?.humiliatingGoalDiff ?? 4}"></div>
+            <div class="field"><label>Shutouts Humillante</label><input class="input" type="number" id="thr${bo}_shutout" value="${eco.bonuses.thresholds?.[bo]?.humiliatingShutout ?? 2}"></div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <div style="margin-top:20px">
+      <button class="btn btn-primary" id="saveEconomyBtn">💾 GUARDAR CONFIGURACIÓN DE ECONOMÍA</button>
+    </div>
+  `;
+}
+
+function bindEconomyTab(){
+  document.getElementById('saveEconomyBtn')?.addEventListener('click', () => {
+    try {
+      const eco = {
+        enabled: document.getElementById('ecoEnabled').checked,
+        allowDebt: document.getElementById('ecoAllowDebt').checked,
+        pigMultiplier: +document.getElementById('ecoPigMult').value || 0,
+        pigAllowNegative: document.getElementById('ecoPigNeg').checked,
+        pigNegativeFloor: +document.getElementById('ecoPigFloor').value || 0,
+        missedShotsPenalty: +document.getElementById('ecoMissPenalty').value || 0,
+        basePriceByRank: {},
+        bonuses: {
+          winSimple: { amount: +document.getElementById('ecoWinSimple').value || 0, label: 'Victoria simple' },
+          winHard: { amount: +document.getElementById('ecoWinHard').value || 0, label: 'Victoria complicada' },
+          winHumiliating: { amount: +document.getElementById('ecoWinHum').value || 0, label: 'Victoria humillante' },
+          qualifyPlayoffs: { amount: +document.getElementById('ecoQualify').value || 0, label: 'Clasificar a Play-Offs' },
+          passRound: { amount: +document.getElementById('ecoPassRound').value || 0, label: 'Pasar de ronda (Playoffs)' },
+          winLeague: { amount: +document.getElementById('ecoWinLeague').value || 0, label: 'Ganar la liga' },
+          promote: { amount: +document.getElementById('ecoPromote').value || 0, label: 'Ascenso de división' },
+          thresholds: {
+            BO3: {
+              simpleMargin: +document.getElementById('thrBO3_simple').value || 0,
+              humiliatingGoalDiff: +document.getElementById('thrBO3_goal').value || 0,
+              humiliatingShutout: +document.getElementById('thrBO3_shutout').value || 0
+            },
+            BO5: {
+              simpleMargin: +document.getElementById('thrBO5_simple').value || 0,
+              humiliatingGoalDiff: +document.getElementById('thrBO5_goal').value || 0,
+              humiliatingShutout: +document.getElementById('thrBO5_shutout').value || 0
+            },
+            BO7: {
+              simpleMargin: +document.getElementById('thrBO7_simple').value || 0,
+              humiliatingGoalDiff: +document.getElementById('thrBO7_goal').value || 0,
+              humiliatingShutout: +document.getElementById('thrBO7_shutout').value || 0
+            }
+          }
+        },
+        sanctions: { reasons: [] }
+      };
+
+      // 1. Leer precios base
+      document.querySelectorAll('[data-eco-rank]').forEach(input => {
+        const rank = input.dataset.ecoRank;
+        const level = input.dataset.ecoLevel;
+        if (!eco.basePriceByRank[rank]) eco.basePriceByRank[rank] = {};
+        eco.basePriceByRank[rank][level] = +input.value || 0;
+      });
+
+      // 2. Leer sanciones (se mantiene el array original)
+      const db = getDB();
+      eco.sanctions = JSON.parse(JSON.stringify(db.config.economy?.sanctions || ECONOMY_DEFAULTS.sanctions));
+      
+      document.querySelectorAll('[data-sanction-id]').forEach(input => {
+        const id = input.dataset.sanctionId;
+        const reason = eco.sanctions.reasons.find(r => r.id === id);
+        if (reason) reason.defaultAmount = +input.value || 0;
+      });
+
+      // 3. Guardar en DB
+      mutate(d => {
+        d.config.economy = eco;
+      });
+      
+      logChange('update', 'config', null, 'Configuración de economía actualizada');
+      toast('✅ Configuración de economía guardada y sincronizada', 'success');
+      
+      // Recargar la pestaña para reflejar
+      const db2 = getDB();
+      document.getElementById('configContent').innerHTML = renderEconomyTab(db2);
+      bindEconomyTab();
+      
+    } catch(e) {
+      console.error('[ECONOMY SAVE ERROR]', e);
+      toast('Error al guardar economía: ' + e.message, 'error');
+    }
   });
 }
 
@@ -1847,6 +2044,7 @@ export function bindConfigEvents(){
 
   if (configTab === 'trophies') bindTrophiesConfig();
   if (configTab === 'theme') bindThemeTab();
+  if (configTab === 'economy') bindEconomyTab();
 
   document.getElementById('aiToggleKey')?.addEventListener('click', () => {
     const el = document.getElementById('aiKey');
@@ -2155,7 +2353,7 @@ function esc(str){
 }
 
 // ============================================================
-// AI TOURNAMENT WIZARD
+// AI TOURNAMENT WIZARD (SIN CAMBIOS)
 // ============================================================
 const AITournamentWizard = {
   state: {
@@ -2804,7 +3002,8 @@ const AITournamentWizard = {
               divisionId: this.state.targetDivisionId,
               seasonId: seasonId,
               roster: [],
-              trophies: []
+              trophies: [],
+              money: 0 // NUEVO
             });
           });
         });
