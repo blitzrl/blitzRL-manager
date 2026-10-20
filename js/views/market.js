@@ -43,17 +43,21 @@ export function marketView(){
           <thead>
             <tr>
               <th>FECHA</th><th>JUGADOR</th><th>ORIGEN → DESTINO</th>
-              <th class="num">TIPO</th><th class="num">ACCIÓN</th>
+              <th class="num">TIPO</th><th class="num">PRECIO</th><th class="num">ACCIÓN</th>
             </tr>
           </thead>
           <tbody>
             ${filtered.length === 0
-              ? '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">Sin movimientos registrados</td></tr>'
+              ? '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">Sin movimientos registrados</td></tr>'
               : filtered.map(m => {
                   const player = db.players.find(p => p.id === m.playerId) || {};
                   const fromTeam = db.teams.find(t => t.id === m.fromTeamId);
                   const toTeam = db.teams.find(t => t.id === m.toTeamId);
                   const typeLabel = m.type === 'transfer' ? 'FICHAJE' : m.type === 'free' ? 'AGENTE LIBRE' : 'PENDIENTE';
+                  
+                  const priceVal = m.price;
+                  const priceStr = priceVal !== undefined ? `$${priceVal.toLocaleString()}` : '—';
+
                   return `
                     <tr>
                       <td style="font-size:11px;color:var(--muted)">${new Date(m.date).toLocaleDateString()}</td>
@@ -73,6 +77,7 @@ export function marketView(){
                         </div>
                       </td>
                       <td class="num"><span class="market-type-chip ${m.type}">${typeLabel}</span></td>
+                      <td class="num" style="color:var(--gold);font-weight:600">${priceStr}</td>
                       <td class="num"><button class="btn btn-sm btn-primary" data-mkt-news="${m.id}">📰 NOTICIA</button></td>
                     </tr>`;
                 }).join('')}
@@ -107,9 +112,12 @@ async function createNewsFromTransfer(movId){
   if (!player) return toast('Jugador no encontrado', 'error');
   const fromTeam = db.teams.find(t => t.id === mov.fromTeamId);
   const toTeam = db.teams.find(t => t.id === mov.toTeamId);
+  
+  const price = mov.price !== undefined ? mov.price : 0;
+  const priceStr = price > 0 ? `$${price.toLocaleString()}` : 'Agente Libre';
 
   let banner = '';
-  try { banner = await generateTransferBanner(player, fromTeam, toTeam); }
+  try { banner = await generateTransferBanner(player, fromTeam, toTeam, price); }
   catch(e){ console.warn('[ZENITH] banner error', e); }
 
   openModal({
@@ -124,7 +132,7 @@ async function createNewsFromTransfer(movId){
       </div>
       <div class="field">
         <label>Título</label>
-        <input class="input" id="mkt-news-title" value="BREAKING: ${esc(player.name)} fue transferido de ${esc(mov.fromTeamName || 'Agente Libre')} a ${esc(mov.toTeamName || 'Agente Libre')}">
+        <input class="input" id="mkt-news-title" value="BREAKING: ${esc(player.name)} ficha por ${esc(mov.toTeamName || 'Agente Libre')}">
       </div>
       <div class="row">
         <div class="field">
@@ -141,7 +149,7 @@ async function createNewsFromTransfer(movId){
       </div>
       <div class="field">
         <label>Contenido</label>
-        <textarea class="textarea" id="mkt-news-body" rows="8"></textarea>
+        <textarea class="textarea" id="mkt-news-body" rows="8">El jugador ${esc(player.name)} ha sido transferido de ${esc(mov.fromTeamName || 'Agente Libre')} a ${esc(mov.toTeamName || 'Agente Libre')}.\n\nEl traspaso se ha cerrado por un valor de ${priceStr}.</textarea>
       </div>
     `,
     footer: `
