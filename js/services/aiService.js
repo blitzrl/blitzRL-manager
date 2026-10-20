@@ -340,7 +340,6 @@ export const AIService = {
       if(text){
         const parsed = JSON.parse(cleanJSON(text));
         if(parsed.assignments) {
-          // Ajustar el logoIndex al índice real (por el batching)
           parsed.assignments.forEach(a => {
             a.logoIndex += i;
             allAssignments.push(a);
@@ -351,6 +350,97 @@ export const AIService = {
     }
 
     return { assignments: allAssignments, warnings: allWarnings };
+  },
+
+  // ============================================================
+  // NUEVO: SIMULADOR / PREDICTOR DE PARTIDOS CON IA
+  // ============================================================
+  async predictMatch(contextData) {
+    const cfg = getAIConfig();
+    if (!cfg.apiKey) throw new Error('Falta la API key de Gemini. Configura en SISTEMA → Configuración → IA.');
+    const model = cfg.model || AIService.DEFAULT_MODEL;
+
+    const systemPrompt = `Eres un analista experto de esports de Rocket League y estadístico de datos.
+Recibirás un JSON con el contexto de dos equipos (TeamA y TeamB) que se van a enfrentar en un partido de liga o playoffs.
+El contexto incluye:
+- El formato del partido (BO3, BO5, BO7).
+- La posición actual en la tabla, puntos, victorias, derrotas, goles a favor (GF), goles en contra (GC) y los últimos 5 resultados (racha).
+- El roster actual de cada equipo, con el Rango, PIG (rendimiento), Racha individual (buena, mala o neutra) y Eficiencia (tiros a gol) de cada jugador.
+- El contexto de la liga (puntos de playoff, equipos a los que persigue, etc.).
+
+TU TRABAJO SE DIVIDE EN 4 PROCESOS INTERNOS (NO los expliques en la respuesta, solo úsalos para calcular):
+
+PROCESO 1 (Equipos): Analiza el rendimiento histórico de esta temporada de los equipos. Si tienen racha positiva, si meten muchos goles, si su defensa es débil.
+PROCESO 2 (Jugadores): Analiza a cada jugador activo del roster actual. Su PIG indica qué tan bueno es. Su rango indica su nivel base. Su racha indica si está en un buen momento o en un bache.
+PROCESO 3 (Análisis): Basándote en los procesos 1 y 2, define las probabilidades de victoria (sumando 100%), los pros y contras de cada equipo, y el análisis de playoffs.
+PROCESO 4 (Predicción): Simula el resultado del partido respetando el formato (BO3 = el que llegue a 2 gana la serie, BO5 = a 3, BO7 = a 4). Asigna los goles y asistencias a los jugadores del roster actual. Los goles DEBEN ser proporcionales a su PIG, Eficiencia y Racha. Un jugador con mala racha o bajo PIG tiene menos probabilidades de meter goles que uno con alto PIG y buena racha. Elige un MVP del partido basándote en las estadísticas simuladas.
+
+Debes devolver ESTRICTAMENTE un JSON válido con la siguiente estructura (NO agregues markdown, SOLO el JSON):
+
+{
+  "teamA": {
+    "name": "Nombre exacto del equipo A",
+    "winProbability": 55, 
+    "pros": ["Pro 1", "Pro 2"],
+    "cons": ["Contra 1", "Contra 2"]
+  },
+  "teamB": {
+    "name": "Nombre exacto del equipo B",
+    "winProbability": 45,
+    "pros": ["Pro 1", "Pro 2"],
+    "cons": ["Contra 1", "Contra 2"]
+  },
+  "predictedSeriesScore": "2-1",
+  "predictedWinner": "Nombre del equipo ganador",
+  "mvp": {
+    "name": "Nombre del jugador MVP",
+    "team": "Nombre del equipo del MVP",
+    "reason": "Razón breve de por qué fue MVP (ej. 3 goles y 2 asistencias)"
+  },
+  "scorers": [
+    { "name": "Jugador 1", "team": "Team A", "goals": 4, "assists": 2 },
+    { "name": "Jugador 2", "team": "Team A", "goals": 2, "assists": 3 },
+    { "name": "Jugador 3", "team": "Team B", "goals": 3, "assists": 1 }
+  ],
+  "playoffScenarios": "Análisis de cómo afecta este resultado a las chances de cada equipo de mantenerse en zona de Playoffs o Play-In. Si se quedan o si los sacan. Sé específico con los puntos.",
+  "reportText": "Un texto largo y detallado con todo el informe analítico para copiar y pegar. Debe incluir el análisis del partido, pros y contras, y la predicción final."
+}`;
+
+    const body = {
+      contents: [{
+        parts: [
+          { text: systemPrompt },
+          { text: `Aquí están los datos del partido:\n${JSON.stringify(contextData, null, 2)}` }
+        ]
+      }],
+      generationConfig: { 
+        response_mime_type: 'application/json', 
+        temperature: 0.7 
+      }
+    };
+
+    const res = await fetch(`${GEMINI_BASE}/models/${model}:generateContent?key=${encodeURIComponent(cfg.apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      const errTxt = await res.text().catch(() => '');
+      throw new Error(`Gemini error ${res.status}: ${errTxt.slice(0, 180)}`);
+    }
+
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error('La IA no devolvió contenido');
+
+    try {
+      return JSON.parse(cleanJSON(text));
+    } catch {
+      const match = text.match(/\{[\s\S]*\}/);
+      if (match) return JSON.parse(cleanJSON(match[0]));
+      throw new Error('La IA no devolvió un JSON válido para la simulación.');
+    }
   }
 };
 
