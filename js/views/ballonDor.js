@@ -8,14 +8,17 @@ export function ballonDorView(){
   const db = getDB();
   const activeDivisionId = state.divisionId;
   
-  // FIX: aggregatePlayerStats devuelve pigHistory calculado
   const stats = aggregatePlayerStats({ divisionId: activeDivisionId })
     .filter(p => p.games > 0)
     .map(p => {
       const player = db.players.find(x => x.id === p.id);
-      // calculateTrend espera un objeto con pigHistory. 
-      // Le pasamos el objeto stats que SI tiene el historial actualizado.
-      return { ...p, pigTrend: calculateTrend(p) }; 
+      // FIX: Obtener equipo actual del roster
+      const currentTeam = db.teams.find(t => (t.roster || []).some(r => r.playerId === p.id));
+      return { 
+        ...p, 
+        teamName: currentTeam ? currentTeam.name : 'Agente Libre',
+        pigTrend: calculateTrend(p) 
+      }; 
     })
     .sort((a,b) => b.pig - a.pig);
 
