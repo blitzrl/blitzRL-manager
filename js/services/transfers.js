@@ -4,6 +4,8 @@
 import { getDB, mutate } from './storage.js';
 import { uid } from '../data/database.js';
 import { openModal, closeTopModal, closeAllModals, toast } from './ui.js';
+import { calculatePlayerPrice } from './economy.js';
+import { aggregatePlayerStats } from './statistics.js';
 
 // ---------- HELPERS ----------
 export function getPlayerCurrentTeam(playerId){
@@ -89,7 +91,8 @@ export function doFreeAgent(playerId){
         fromDivisionId: ft?.divisionId || null,
         toDivisionId: null,
         date: Date.now(),
-        type: 'free'
+        type: 'free',
+        price: 0 // NUEVO
       });
     });
 
@@ -108,6 +111,16 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset){
     const player = db.players.find(p => p.id === playerId);
     const targetTeam = db.teams.find(t => t.id === targetTeamId);
     if (!player || !targetTeam) return toast('Datos inválidos', 'error');
+
+    // 1. Calcular precio
+    const stats = aggregatePlayerStats().find(s => s.id === playerId);
+    const priceData = calculatePlayerPrice(player, stats, db.config.economy);
+    const price = priceData.price;
+
+    // 2. Validar fondos (si no se permiten deudas)
+    if (!db.config.economy.allowDebt && (targetTeam.money || 0) < price) {
+      return toast(`Fondos insuficientes. Requiere $${price.toLocaleString()}, tiene $${(targetTeam.money||0).toLocaleString()}`, 'error');
+    }
 
     const fromTeam = getPlayerCurrentTeam(playerId);
     const fromDivId = fromTeam?.divisionId || null;
@@ -152,6 +165,24 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset){
         tt.roster.push({ playerId, role: 'SUPLENTE' });
       }
 
+      // Actualizar Saldos
+      tt.money = (tt.money || 0) - price;
+      if (ft) ft.money = (ft.money || 0) + price;
+
+      // Registrar en Ledger
+      d.economyLedger ||= [];
+      d.economyLedger.unshift({
+        id: uid('led'), ts: Date.now(), type: 'transfer', teamId: tt.id, teamName: tt.name,
+        amount: -price, reason: `Fichaje: ${pl.name}`, meta: { playerId, fromTeamId: ft?.id || null }
+      });
+      if (ft) {
+        d.economyLedger.unshift({
+          id: uid('led'), ts: Date.now(), type: 'transfer', teamId: ft.id, teamName: ft.name,
+          amount: price, reason: `Venta: ${pl.name}`, meta: { playerId, toTeamId: tt.id }
+        });
+      }
+
+      // Registrar en TransferLog
       d.transferLog.push({
         id: uid('mov'),
         playerId,
@@ -163,11 +194,12 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset){
         fromDivisionId: fromDivId,
         toDivisionId: targetTeam.divisionId,
         date: Date.now(),
-        type: goesPending ? 'pending' : 'transfer'
+        type: goesPending ? 'pending' : 'transfer',
+        price: price // NUEVO
       });
     });
 
-    toast(`✅ ${player.name} → ${targetTeam.name}${goesPending ? ' (PENDIENTE)' : ''}`, 'success');
+    toast(`✅ ${player.name} → ${targetTeam.name} por $${price.toLocaleString()}${goesPending ? ' (PENDIENTE)' : ''}`, 'success');
     closeAllModals();
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   } catch(e){
