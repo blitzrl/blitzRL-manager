@@ -6,6 +6,7 @@ import { logChange } from '../services/history.js';
 import { NATIONS, RANKS, PLATFORMS, RANK_LEVELS, RANK_DIVISIONS, getNationFlag, getRankColor } from '../data/nations.js';
 import { openRowActions } from '../services/transfers.js';
 import { renderVitrina } from '../services/trophies.js';
+import { recordTransaction, getTeamSquadValue } from '../services/economy.js';
 
 export function teamsView(){
   const db = getDB();
@@ -29,15 +30,28 @@ function teamCard(t){
     player: db.players.find(p=>p.id===r.playerId)
   }));
   const trophies = t.trophies || [];
+  
+  // Economía
+  const squadValue = getTeamSquadValue(t.id);
+  const balance = t.money || 0;
+  const isDebt = balance < 0;
+
   return `
     <div class="card">
-      <div class="team-card-head">
+      <div class="team-card-head" style="align-items:flex-start">
         <div class="team-logo-box">
           ${t.logo ? `<img src="${t.logo}" class="team-logo-img">` : '<span class="team-logo-fallback">◆</span>'}
         </div>
-        <div>
+        <div style="flex:1;min-width:0">
           <div class="team-name">${t.name}</div>
           <div class="team-coach">Coach: ${t.coach||'—'}</div>
+          <div style="margin-top:6px;font-size:11px;line-height:1.4">
+            <div style="color:var(--accent)">Valor plantilla: <b>$${squadValue.toLocaleString()}</b></div>
+            ${isDebt 
+              ? `<div style="color:var(--danger)">Deuda: <b>$${Math.abs(balance).toLocaleString()}</b></div>`
+              : `<div style="color:var(--success)">Saldo: <b>$${balance.toLocaleString()}</b></div>`
+            }
+          </div>
         </div>
       </div>
       <div class="divider"></div>
@@ -109,10 +123,10 @@ export function openTeamForm(teamId=null){
     logo: team?.logo || '',
     name: team?.name || '',
     coach: team?.coach || '',
+    money: team?.money || 0, // NUEVO
     roster: team ? JSON.parse(JSON.stringify(team.roster)) : []
   };
 
-  // ✅ FIX TDZ: pasar un objeto con .close() en vez de referenciar modalEntry
   openModal({
     id: 'team-form-' + (teamId || 'new'),
     title: team ? 'EDITAR EQUIPO' : 'NUEVO EQUIPO',
@@ -131,6 +145,7 @@ export function openTeamForm(teamId=null){
 }
 
 function renderTeamFormBody(formState, db){
+  const isDebt = formState.money < 0;
   return `
     <div class="field">
       <label>Logo</label>
@@ -144,6 +159,16 @@ function renderTeamFormBody(formState, db){
       <div class="field"><label>Nombre del equipo</label><input class="input" id="tName" value="${formState.name}"></div>
       <div class="field"><label>Coach</label><input class="input" id="tCoach" value="${formState.coach}"></div>
     </div>
+    
+    <!-- NUEVO CAMPO DE DINERO -->
+    <div class="field">
+      <label>Saldo / Dinero ($)</label>
+      <input class="input" type="number" id="tMoney" value="${formState.money}">
+      <small class="field-hint" style="color:${isDebt ? 'var(--danger)' : 'var(--muted)'}">
+        ${isDebt ? '⚠️ El equipo tiene deuda actualmente.' : 'Edita el saldo. Los cambios manuales se registrarán en la hoja contable.'}
+      </small>
+    </div>
+
     <div class="divider"></div>
     <div class="section-minihead">
       <span>ROSTER (máx. ${db.config.rosterRules.max})</span>
@@ -200,7 +225,6 @@ function renderRosterRows(formState, db, container){
         renderRosterRows(formState, db, container);
       });
     }));
-  // ✅ NUEVO: botón ⚙ nativo que llama a transfers.js
   container.querySelectorAll('[data-row-actions]').forEach(b =>
     b.addEventListener('click', ()=>{
       const idx = +b.dataset.rowActions;
@@ -213,9 +237,11 @@ function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, mod
   const rosterRows = root.querySelector('#rosterRows');
   const nameInput = root.querySelector('#tName');
   const coachInput = root.querySelector('#tCoach');
+  const moneyInput = root.querySelector('#tMoney');
 
   nameInput.addEventListener('input', ()=> formState.name = nameInput.value);
   coachInput.addEventListener('input', ()=> formState.coach = coachInput.value);
+  moneyInput.addEventListener('input', ()=> formState.money = +moneyInput.value || 0);
 
   const drop = root.querySelector('#logoDrop');
   const input = root.querySelector('#logoInput');
@@ -258,20 +284,37 @@ function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, mod
 
       const validRoster = formState.roster.filter(r => db.players.find(p=>p.id===r.playerId));
       let savedTeamId = team?.id || null;
+      
+      // Detectar si el dinero cambió
+      const previousMoney = team ? (team.money || 0) : 0;
+      const newMoney = formState.money;
+      const moneyDiff = newMoney - previousMoney;
 
       mutate(d => {
         if(team){
           const t = d.teams.find(x=>x.id===team.id);
           if(!t) throw new Error('El equipo ya no existe');
-          Object.assign(t, { name, coach, logo: formState.logo, roster: validRoster });
+          Object.assign(t, { name, coach, logo: formState.logo, roster: validRoster, money: newMoney });
         } else {
           savedTeamId = uid('team');
           d.teams.push({
             id: savedTeamId, name, tag:'', logo: formState.logo, coach,
-            divisionId: activeDivisionId, seasonId, roster: validRoster, trophies: []
+            divisionId: activeDivisionId, seasonId, roster: validRoster, trophies: [],
+            money: newMoney
           });
         }
       });
+
+      // Registrar ajuste manual en el Ledger si hubo cambios
+      if (team && moneyDiff !== 0) {
+        recordTransaction({
+          teamId: team.id,
+          type: 'manual_adjust',
+          amount: moneyDiff,
+          reason: 'Ajuste manual desde formulario',
+          meta: { previousMoney, newMoney }
+        });
+      }
 
       try { logChange(team?'edit':'create', 'team', savedTeamId, `Equipo "${name}" ${team?'editado':'creado'}`); }
       catch(e){ console.warn(e); }
@@ -287,7 +330,7 @@ function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, mod
 }
 
 // ============================================================
-// FORMULARIO DE JUGADOR
+// FORMULARIO DE JUGADOR (Sin cambios en esta fase)
 // ============================================================
 export function openPlayerForm(playerId=null, onSaved=null){
   const db = getDB();
@@ -303,7 +346,6 @@ export function openPlayerForm(playerId=null, onSaved=null){
     ${NATIONS.map(n => `<option value="${n.code}" ${player?.nationalityCode===n.code?'selected':''}>${n.flag} ${n.name}</option>`).join('')}
   `;
 
-  // ✅ Botones extra solo si el jugador ya existe (editando)
   const extraButtons = player ? `
     <div class="player-form-actions">
       <button type="button" class="btn btn-sm" id="pfTransfer">🔄 TRANSFERIR</button>
@@ -382,7 +424,6 @@ export function openPlayerForm(playerId=null, onSaved=null){
       rankSel.addEventListener('change', refresh);
       refresh();
 
-      // Botones extra (solo si editando)
       if(player){
         const importLazy = async () => await import('../services/transfers.js');
         root.querySelector('#pfTransfer')?.addEventListener('click', async () => {
