@@ -1,5 +1,5 @@
 // ============================================================
-// PERFORMANCE VIEW (Gestor y Visualizador)
+// PERFORMANCE VIEW (Gestor)
 // ============================================================
 import { getDB } from '../services/storage.js';
 import { state } from '../state.js';
@@ -10,6 +10,10 @@ import { aggregatePlayerStats } from '../services/statistics.js';
 let _activeTab = 'players';
 let _selectedPlayerId = null;
 let _selectedTeamId = null;
+
+// FIX: Usar el objeto global para Chart.js instancias
+let chartStats = null;
+let chartEconomy = null;
 
 export function performanceView(){
   const db = getDB();
@@ -53,7 +57,6 @@ export function performanceView(){
     </div>
 
     <div class="grid grid-2">
-      <!-- FORZAMOS LA ALTURA A 300PX PARA QUE CHART.JS NO COLAPSE -->
       <div class="card">
         <div class="card-header"><div class="card-title"><span class="dot">◆</span>RENDIMIENTO POR JORNADA</div></div>
         <div style="position:relative; height:300px; width:100%;">
@@ -75,8 +78,9 @@ export function bindPerformanceEvents(){
   const ctxEco = document.getElementById('perfEconomyChart');
   if (!ctxStats || !ctxEco) return;
 
-  if (window._chartStatsInstance) { window._chartStatsInstance.destroy(); window._chartStatsInstance = null; }
-  if (window._chartEconomyInstance) { window._chartEconomyInstance.destroy(); window._chartEconomyInstance = null; }
+  // FIX: Destruir instancias previas si existen
+  if (chartStats) { chartStats.destroy(); chartStats = null; }
+  if (chartEconomy) { chartEconomy.destroy(); chartEconomy = null; }
 
   document.querySelectorAll('[data-perf-tab]').forEach(t => t.addEventListener('click', () => {
     _activeTab = t.dataset.perfTab;
@@ -105,14 +109,14 @@ function renderCharts() {
   const ctxEco = document.getElementById('perfEconomyChart');
   if (!ctxStats || !ctxEco) return;
 
-  window._chartStatsInstance = new Chart(ctxStats, { type: 'line', data: { labels: [], datasets: [] } });
-  window._chartEconomyInstance = new Chart(ctxEco, { type: 'line', data: { labels: [], datasets: [] } });
+  chartStats = new Chart(ctxStats, { type: 'line', data: { labels: [], datasets: [] } });
+  chartEconomy = new Chart(ctxEco, { type: 'line', data: { labels: [], datasets: [] } });
   
   updateChartsData();
 }
 
 function updateChartsData() {
-  if (!window._chartStatsInstance || !window._chartEconomyInstance) return;
+  if (!chartStats || !chartEconomy) return;
 
   const db = getDB();
   const season = db.seasons.find(s => s.active) || db.seasons[0];
@@ -122,24 +126,23 @@ function updateChartsData() {
     if (!player) return;
 
     const timeline = getPlayerTimeline(player.id, { seasonId: season?.id, divisionId: state.divisionId });
-    window._chartStatsInstance.data.labels = timeline.map(t => `J${t.matchday}`);
-    window._chartStatsInstance.data.datasets = [
+    chartStats.data.labels = timeline.map(t => `J${t.matchday}`);
+    chartStats.data.datasets = [
       { label: 'Goles', data: timeline.map(t => t.goals), borderColor: '#E6C476', backgroundColor: 'rgba(230,196,118,0.1)', tension: 0.3, fill: true },
       { label: 'Asistencias', data: timeline.map(t => t.assists), borderColor: '#6FA8FF', backgroundColor: 'rgba(111,168,255,0.1)', tension: 0.3, fill: true }
     ];
 
     const history = player.priceHistory || [];
     if (history.length === 0) {
-      // FIX: Si no hay historial, calculamos su precio actual y lo mostramos.
       const stats = aggregatePlayerStats().find(s => s.id === player.id);
       const currentPriceData = calculatePlayerPrice(player, stats || {}, db.config.economy);
-      window._chartEconomyInstance.data.labels = [season?.name || 'Actual'];
-      window._chartEconomyInstance.data.datasets = [{
+      chartEconomy.data.labels = [season?.name || 'Actual'];
+      chartEconomy.data.datasets = [{
         label: 'Valor de Mercado ($)', data: [currentPriceData.price || 1000], borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.3, fill: true
       }];
     } else {
-      window._chartEconomyInstance.data.labels = history.map(h => h.seasonName);
-      window._chartEconomyInstance.data.datasets = [{
+      chartEconomy.data.labels = history.map(h => h.seasonName);
+      chartEconomy.data.datasets = [{
         label: 'Valor de Mercado ($)', data: history.map(h => h.price), borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.3, fill: true
       }];
     }
@@ -148,8 +151,8 @@ function updateChartsData() {
     if (!team) return;
 
     const timeline = getTeamTimeline(team.id, { seasonId: season?.id, divisionId: state.divisionId });
-    window._chartStatsInstance.data.labels = timeline.map(t => `J${t.matchday}`);
-    window._chartStatsInstance.data.datasets = [
+    chartStats.data.labels = timeline.map(t => `J${t.matchday}`);
+    chartStats.data.datasets = [
       { label: 'Goles', data: timeline.map(t => t.goals), borderColor: '#E6C476', backgroundColor: 'rgba(230,196,118,0.1)', tension: 0.3, fill: true },
       { label: 'Asistencias', data: timeline.map(t => t.assists), borderColor: '#6FA8FF', backgroundColor: 'rgba(111,168,255,0.1)', tension: 0.3, fill: true }
     ];
@@ -165,14 +168,14 @@ function updateChartsData() {
       balLabels.push(new Date(l.ts).toLocaleDateString());
     });
 
-    window._chartEconomyInstance.data.labels = balLabels.length ? balLabels : ['Actual'];
-    window._chartEconomyInstance.data.datasets = [{
+    chartEconomy.data.labels = balLabels.length ? balLabels : ['Actual'];
+    chartEconomy.data.datasets = [{
       label: 'Saldo Acumulado ($)', data: balData.length ? balData : [team.money || 0], borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.1, fill: true
     }];
   }
 
-  window._chartStatsInstance.update();
-  window._chartEconomyInstance.update();
+  chartStats.update();
+  chartEconomy.update();
 }
 
 function esc(str) { return String(str ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
