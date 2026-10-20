@@ -6,7 +6,7 @@ import { openPlayerForm } from './teams.js';
 import { openModal } from '../services/ui.js';
 import { renderVitrina } from '../services/trophies.js';
 import { state } from '../state.js';
-import { calculatePlayerPrice } from '../services/economy.js'; // NUEVO
+import { calculatePlayerPrice } from '../services/economy.js';
 
 export function playersView(params = []){
   const db = getDB();
@@ -21,7 +21,6 @@ export function playersView(params = []){
   const division = db.divisions.find(d => d.id === divisionId);
   if(!division) return `<div class="card">Sin división activa.</div>`;
 
-  // Equipos de la división activa
   const teamsInDiv = db.teams.filter(t => t.divisionId === divisionId);
   const teamByPlayerId = new Map();
   teamsInDiv.forEach(t => {
@@ -30,7 +29,6 @@ export function playersView(params = []){
     });
   });
 
-  // Agrupar jugadores por equipo (solo los que están en rosters de esta división)
   const groups = teamsInDiv.map(team => {
     const players = db.players.filter(p =>
       (team.roster || []).some(r => r.playerId === p.id)
@@ -38,7 +36,6 @@ export function playersView(params = []){
     return { team, players };
   }).filter(g => g.players.length > 0);
 
-  // Jugadores huérfanos: tienen divisionId === division activa pero no están en ningún roster
   const orphans = db.players.filter(p =>
     p.divisionId === divisionId && !teamByPlayerId.has(p.id)
   );
@@ -58,8 +55,7 @@ export function playersView(params = []){
 
     ${groups.length === 0 && orphans.length === 0 ? `
       <div class="card" style="text-align:center;padding:40px;color:var(--muted)">
-        No hay jugadores en esta división.<br>
-        <span style="font-size:11.5px">Añade jugadores a los equipos de ${esc(division.name)} para verlos aquí.</span>
+        No hay jugadores en esta división.
       </div>
     ` : ''}
 
@@ -159,7 +155,6 @@ function playerProfileView(p){
   const trendColor = { '▲':'var(--success)', '▼':'var(--danger)', '—':'var(--muted)' };
   const trophies = p.trophies || [];
 
-  // ECONOMÍA: Calcular precio
   const priceData = calculatePlayerPrice(p, stats, db.config.economy);
 
   let divId = p.divisionId;
@@ -171,6 +166,14 @@ function playerProfileView(p){
 
   const rankOf = (map) => map?.get(p.id) || '—';
   const totalRanked = rankings.total || 1;
+
+  // Lógica de Rachas
+  let streakBadge = '';
+  if (stats.winStreak >= 3) {
+    streakBadge = `<span class="badge badge-win" style="font-size:12px;padding:4px 10px;">🔥 RACHA POSITIVA</span>`;
+  } else if (stats.lossStreak >= db.config.badStreak.consecutiveLosses) {
+    streakBadge = `<span class="badge badge-loss" style="font-size:12px;padding:4px 10px;">📉 MALA RACHA</span>`;
+  }
 
   return `
     <div class="back-row">
@@ -193,7 +196,7 @@ function playerProfileView(p){
             ${p.nationalityCode ? `<span class="chip">${flag} ${esc(nationName)}</span>` : ''}
             <span class="chip"><i class="${platformIcon(p.platform)}"></i> ${esc(p.platform||'—')}</span>
             <span class="chip" style="color:${rankColor};border-color:${rankColor}44">${esc(rankLine)}</span>
-            ${streak.label !== 'NEUTRA' ? `<span class="badge ${streak.cls}">${streak.label}</span>` : ''}
+            ${streakBadge}
           </div>
           ${p.rlTracker
             ? `<a href="${p.rlTracker}" target="_blank" class="player-tracker-link"><i class="fa-solid fa-arrow-up-right-from-square"></i> RL TRACKER ↗</a>`
@@ -210,7 +213,6 @@ function playerProfileView(p){
       </div>
     </div>
 
-    <!-- NUEVO: CARD DE VALOR DE MERCADO -->
     <div class="card" style="margin-top:18px;border-left:4px solid var(--gold)">
       <div class="card-header">
         <div class="card-title" style="color:var(--gold)"><span class="dot" style="color:var(--gold)">◆</span>VALOR DE MERCADO</div>
