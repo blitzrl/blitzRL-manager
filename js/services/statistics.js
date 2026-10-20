@@ -1,284 +1,185 @@
-// ============================================================
-// ECONOMY SERVICE — Cálculo y Movimientos (Gestor)
-// ============================================================
-import { getDB, mutate } from './storage.js';
-import { ECONOMY_DEFAULTS, uid } from '../data/database.js';
-import { aggregatePlayerStats } from './statistics.js';
+import { getDB } from './storage.js';
+import { calculatePIG, efficiency } from './pig.js';
 
-export function calculatePlayerPrice(player, stats, economy){
-  const db = getDB();
-  const eco = economy || db?.config?.economy || ECONOMY_DEFAULTS;
-
-  if (!eco || !eco.enabled) {
-    return { basePrice: 0, pig: stats?.pig || 0, pigAdjustment: 0, price: 0, rank: player.rank || 'Bronze', level: player.rankLevel || 1 };
-  }
-
-  const rank = player.rank || 'Bronze';
-  const level = player.rankLevel || 1;
-  
-  const rankTable = eco.basePriceByRank?.[rank] || {};
-  const basePrice = rankTable[level] ?? rankTable[1] ?? 0;
-
-  const pig = stats?.pig ?? 0;
-  const pigAdjustment = pig * (eco.pigMultiplier || 1000);
-
-  const price = Math.max(0, basePrice + pigAdjustment);
-
-  return {
-    basePrice,
-    pig: +pig.toFixed(2),
-    pigAdjustment,
-    price,
-    rank,
-    level
-  };
+export function efficiencyOffense(goals, shots){
+  if(!shots) return 0;
+  return +((goals / shots) * 100).toFixed(1);
 }
 
-export function getTeamSquadValue(teamId) {
-  const db = getDB();
-  const team = db.teams.find(t => t.id === teamId);
-  if (!team) return 0;
-
-  const allStats = aggregatePlayerStats({ teamId });
-  let totalValue = 0;
-  
-  (team.roster || []).forEach(r => {
-    const player = db.players.find(p => p.id === r.playerId);
-    if (!player) return;
-    const stats = allStats.find(s => s.id === r.playerId);
-    const valueData = calculatePlayerPrice(player, stats, db.config.economy);
-    totalValue += valueData.price;
-  });
-
-  return totalValue;
+export function efficiencyDefense(saves, goalsAgainst){
+  const total = saves + (goalsAgainst || 0);
+  if(!total) return 0;
+  return +((saves / total) * 100).toFixed(1);
 }
 
-export function detectVictoryType(games, format, winnerId, teamAId, teamBId, economy) {
+export function aggregatePlayerStats({ divisionId=null, seasonId=null, teamId=null } = {}){
   const db = getDB();
-  const eco = economy || db?.config?.economy || ECONOMY_DEFAULTS;
-  if (!eco || !eco.enabled || !games || games.length === 0) return null;
+  const map = new Map();
 
-  const winnerIsA = winnerId === teamAId;
-  const thresholds = eco.bonuses.thresholds?.[format || 'BO3'] || eco.bonuses.thresholds['BO3'];
-  
-  let winnerGamesWon = 0;
-  let loserGamesWon = 0;
-  let shutouts = 0;
-  let totalGoalDiff = 0;
-
-  games.forEach(g => {
-    const wScore = winnerIsA ? g.scoreA : g.scoreB;
-    const lScore = winnerIsA ? g.scoreB : g.scoreA;
-    
-    if (wScore > lScore) {
-      winnerGamesWon++;
-      totalGoalDiff += (wScore - lScore);
-      if (lScore === 0) shutouts++;
-    } else {
-      loserGamesWon++;
-    }
-  });
-
-  if (winnerGamesWon === 0) return null;
-
-  const avgGoalDiff = totalGoalDiff / winnerGamesWon;
-
-  if (shutouts >= thresholds.humiliatingShutout || avgGoalDiff >= thresholds.humiliatingGoalDiff) {
-    return { type: 'humiliating', label: eco.bonuses.winHumiliating.label, amount: eco.bonuses.winHumiliating.amount, emoji: '😂' };
-  }
-  
-  if (loserGamesWon === 0) {
-    return { type: 'simple', label: eco.bonuses.winSimple.label, amount: eco.bonuses.winSimple.amount, emoji: '✅' };
-  }
-
-  return { type: 'hard', label: eco.bonuses.winHard.label, amount: eco.bonuses.winHard.amount, emoji: '⚔️' };
-}
-
-export function applyMatchBonuses(matchId) {
-  const db = getDB();
-  const match = db.matches.find(m => m.id === matchId);
-  if (!match || match.status !== 'finished' || match.bonusApplied) return;
-
-  let winnerId = match.winnerId;
-  if (!winnerId) {
-    let winsA = 0, winsB = 0;
-    match.games.forEach(g => {
-      if (g.scoreA > g.scoreB) winsA++;
-      else if (g.scoreB > g.scoreA) winsB++;
+  db.players.forEach(p => {
+    map.set(p.id, {
+      id: p.id, name: p.name,
+      teamId: null, teamName: '—',
+      games: 0, series: 0, wins: 0, losses: 0,
+      goals: 0, assists: 0, saves: 0, shots: 0,
+      goalsAgainst: 0,
+      winStreak: 0, lossStreak: 0,
+      divisionId: null, seasonId: null,
+      pigHistory: []
     });
-    winnerId = winsA > winsB ? match.teamAId : match.teamBId;
-  }
-
-  const vType = detectVictoryType(match.games, match.format, winnerId, match.teamAId, match.teamBId, db.config.economy);
-  if (!vType) return;
-
-  recordTransaction({
-    teamId: winnerId,
-    type: 'bonus_win',
-    amount: vType.amount,
-    reason: `${vType.label} (J${match.matchday})`,
-    meta: { matchId, victoryType: vType.type }
   });
 
-  mutate(d => {
-    const m = d.matches.find(x => x.id === matchId);
-    if (m) m.bonusApplied = true;
-  });
-}
+  const teamById = new Map(db.teams.map(t => [t.id, t]));
 
-export function applyBracketMatchBonuses(divisionId, roundId, matchIndex) {
-  const db = getDB();
-  const target = db.playoffs.find(p => p.divisionId === divisionId);
-  if (!target || !target.bracket) return;
-
-  const round = target.bracket.rounds.find(r => r.id === roundId);
-  if (!round) return;
-  const match = round.matches[matchIndex];
-  if (!match || !match.winnerId || match.bonusApplied) return;
-
-  const vType = detectVictoryType(match.games, match.format, match.winnerId, match.teamA?.teamId, match.teamB?.teamId, db.config.economy);
-  if (!vType) return;
-
-  recordTransaction({
-    teamId: match.winnerId,
-    type: 'bonus_win',
-    amount: vType.amount,
-    reason: `${vType.label} (${round.name})`,
-    meta: { divisionId, roundId, matchIndex, victoryType: vType.type }
+  db.teams.forEach(team => {
+    if(teamId && team.id !== teamId) return;
+    if(divisionId && team.divisionId !== divisionId) return;
+    if(seasonId && team.seasonId !== seasonId) return;
+    (team.roster || []).forEach(r => {
+      const s = map.get(r.playerId);
+      if(!s) return;
+      s.teamId = team.id;
+      s.teamName = team.name;
+      s.divisionId = team.divisionId;
+      s.seasonId = team.seasonId;
+    });
   });
 
-  mutate(d => {
-    const t = d.playoffs.find(p => p.divisionId === divisionId);
-    const r = t.bracket.rounds.find(rr => rr.id === roundId);
-    const m = r.matches[matchIndex];
-    if (m) m.bonusApplied = true;
+  const matches = db.matches.filter(m => {
+    if(divisionId && m.divisionId !== divisionId) return false;
+    if(seasonId   && m.seasonId   !== seasonId)   return false;
+    return true;
   });
-}
 
-export function applySeasonBonuses(d, divisionStatus, movements, seasonId) {
-  const eco = d.config.economy || ECONOMY_DEFAULTS;
-  if (!eco.enabled) return;
+  matches.forEach(m => {
+    (m.games || []).forEach(g => {
+      const winnerId = g.winnerTeamId;
+      (g.players || []).forEach(pp => {
+        const s = map.get(pp.playerId);
+        if(!s) return;
+        const team = teamById.get(pp.teamId);
+        if(teamId && pp.teamId !== teamId) return;
 
-  const bonuses = eco.bonuses;
+        s.teamId = pp.teamId;
+        s.teamName = team?.name || '—';
+        s.divisionId = m.divisionId;
+        s.seasonId = m.seasonId;
 
-  divisionStatus.forEach(status => {
-    if (!status.ready) return;
-    const div = d.divisions.find(x => x.id === status.divisionId);
-    if (!div) return;
+        s.games++;
+        s.goals   += pp.goals   || 0;
+        s.assists += pp.assists || 0;
+        s.saves   += pp.saves   || 0;
+        s.shots   += pp.shots   || 0;
 
-    if (status.champion && status.champion.teamId) {
-      recordTransactionInDB(d, {
-        teamId: status.champion.teamId,
-        type: 'bonus_season',
-        amount: bonuses.winLeague.amount,
-        reason: `Campeón de ${div.name} (${bonuses.winLeague.label})`,
-        meta: { divisionId: div.id, seasonId }
+        const rivalGoals = pp.teamId === m.teamAId ? g.scoreB : g.scoreA;
+        s.goalsAgainst += rivalGoals || 0;
+
+        if(winnerId === pp.teamId){ s.wins++; s.winStreak++; s.lossStreak = 0; }
+        else                       { s.losses++; s.lossStreak++; s.winStreak = 0; }
+      });
+    });
+
+    if(m.status === 'finished'){
+      [m.teamAId, m.teamBId].forEach(tid => {
+        const team = teamById.get(tid);
+        if(!team) return;
+        team.roster.forEach(r => {
+          const s = map.get(r.playerId);
+          if(s && (!teamId || tid === teamId)) s.series++;
+        });
       });
     }
   });
 
-  movements.filter(mv => mv.type === 'promote').forEach(mv => {
-    recordTransactionInDB(d, {
-      teamId: mv.teamId,
-      type: 'bonus_season',
-      amount: bonuses.promote.amount,
-      reason: `Ascenso a ${mv.toDivisionName}`,
-      meta: { seasonId, fromDivisionId: mv.fromDivisionId, toDivisionId: mv.toDivisionId }
+  const result = [...map.values()].map(s => {
+    const pig = calculatePIG(s);
+    const eff = efficiency(s.goals, s.shots);
+    const effOff = efficiencyOffense(s.goals, s.shots);
+    const effDef = efficiencyDefense(s.saves, s.goalsAgainst);
+    const games = Math.max(1, s.games);
+
+    return {
+      ...s,
+      efficiency: eff,
+      efficiencyOffense: effOff,
+      efficiencyDefense: effDef,
+      goalsPerMatch: +(s.goals / games).toFixed(2),
+      assistsPerMatch: +(s.assists / games).toFixed(2),
+      savesPerMatch: +(s.saves / games).toFixed(2),
+      shotsPerMatch: +(s.shots / games).toFixed(2),
+      pig
+    };
+  });
+
+  return result;
+}
+
+export function computeRankings(allStats){
+  const minGames = 1;
+  const eligible = allStats.filter(s => s.games >= minGames);
+
+  const rankBy = (key, dir='desc') => {
+    const sorted = [...eligible].sort((a,b) => dir==='desc' ? (b[key]-a[key]) : (a[key]-b[key]));
+    const map = new Map();
+    sorted.forEach((s,i) => map.set(s.id, i+1));
+    return map;
+  };
+
+  return {
+    goals:      rankBy('goals'),
+    assists:    rankBy('assists'),
+    saves:      rankBy('saves'),
+    shots:      rankBy('shots'),
+    efficiency: rankBy('efficiency'),
+    effOffense: rankBy('efficiencyOffense'),
+    effDefense: rankBy('efficiencyDefense'),
+    pig:        rankBy('pig'),
+    total:      eligible.length
+  };
+}
+
+// ============================================================
+// TIMELINE (JORNADA A JORNADA)
+// ============================================================
+export function getPlayerTimeline(playerId, { seasonId, divisionId } = {}) {
+  const db = getDB();
+  const byMatchday = {};
+  
+  db.matches
+    .filter(m => (!seasonId || m.seasonId === seasonId) && (!divisionId || m.divisionId === divisionId))
+    .forEach(m => {
+      (m.games || []).forEach(g => {
+        (g.players || []).filter(p => p.playerId === playerId).forEach(p => {
+          if (!byMatchday[m.matchday]) byMatchday[m.matchday] = { matchday: m.matchday, goals: 0, assists: 0, saves: 0, shots: 0 };
+          byMatchday[m.matchday].goals   += p.goals   || 0;
+          byMatchday[m.matchday].assists += p.assists || 0;
+          byMatchday[m.matchday].saves   += p.saves   || 0;
+          byMatchday[m.matchday].shots   += p.shots   || 0;
+        });
+      });
     });
-  });
-}
-
-export function recordTransaction({ teamId, type, amount, reason, meta = {} }) {
-  const db = getDB();
-  mutate(d => {
-    recordTransactionInDB(d, { teamId, type, amount, reason, meta });
-  });
-}
-
-export function recordTransactionInDB(d, { teamId, type, amount, reason, meta = {} }) {
-  const t = d.teams.find(x => x.id === teamId);
-  if (!t) return;
-
-  const eco = d.config.economy || ECONOMY_DEFAULTS;
-  let newMoney = (t.money || 0) + amount;
-  if (!eco.allowDebt && newMoney < 0) newMoney = 0;
-  
-  t.money = newMoney;
-
-  d.economyLedger ||= [];
-  d.economyLedger.unshift({
-    id: uid('led'),
-    ts: Date.now(),
-    type,
-    teamId: t.id,
-    teamName: t.name,
-    amount,
-    reason: reason || 'Movimiento',
-    meta
-  });
-}
-
-export function applySanction({ teamId, amount, reasonId, customReason }) {
-  const db = getDB();
-  const eco = db.config.economy || ECONOMY_DEFAULTS;
-  const reasonObj = eco.sanctions?.reasons?.find(r => r.id === reasonId);
-  const finalReason = customReason?.trim() || reasonObj?.label || 'Sanción';
-
-  recordTransaction({
-    teamId,
-    type: 'sanction',
-    amount: -Math.abs(amount),
-    reason: `Sanción: ${finalReason}`,
-    meta: { sanctionReasonId: reasonId }
-  });
-}
-
-export function exportLedgerTXT() {
-  const db = getDB();
-  const ledger = db.economyLedger || [];
-  const teams = db.teams || [];
-
-  const byTeam = {};
-  teams.forEach(t => byTeam[t.id] = { name: t.name, money: t.money || 0, items: [] });
-  
-  ledger.forEach(item => {
-    if (byTeam[item.teamId]) byTeam[item.teamId].items.push(item);
-  });
-
-  let txt = '';
-  txt += `═══════════════════════════════════════════════\n`;
-  txt += `  ZENITH — HOJA CONTABLE\n`;
-  txt += `  Exportado: ${new Date().toLocaleString()}\n`;
-  txt += `  Movimientos registrados: ${ledger.length}\n`;
-  txt += `═══════════════════════════════════════════════\n\n`;
-
-  Object.values(byTeam).forEach(teamData => {
-    if (teamData.items.length === 0 && teamData.money === 0) return;
-
-    txt += `[${teamData.name.toUpperCase()}]\n`;
-    const sortedItems = [...teamData.items].sort((a, b) => a.ts - b.ts);
     
-    sortedItems.forEach(item => {
-      const date = new Date(item.ts).toLocaleDateString();
-      const sign = item.amount >= 0 ? '+' : '';
-      const amtStr = `${sign}$${Math.abs(item.amount).toLocaleString()}`;
-      const reasonStr = item.reason.padEnd(40, '.');
-      txt += `  [${date}] ${reasonStr} ${amtStr}\n`;
+  return Object.values(byMatchday).sort((a,b) => a.matchday - b.matchday);
+}
+
+export function getTeamTimeline(teamId, { seasonId, divisionId } = {}) {
+  const db = getDB();
+  const byMatchday = {};
+  
+  db.matches
+    .filter(m => (!seasonId || m.seasonId === seasonId) && (!divisionId || m.divisionId === divisionId))
+    .forEach(m => {
+      if (m.teamAId !== teamId && m.teamBId !== teamId) return;
+      (m.games || []).forEach(g => {
+        (g.players || []).filter(p => p.teamId === teamId).forEach(p => {
+          if (!byMatchday[m.matchday]) byMatchday[m.matchday] = { matchday: m.matchday, goals: 0, assists: 0, saves: 0, shots: 0 };
+          byMatchday[m.matchday].goals   += p.goals   || 0;
+          byMatchday[m.matchday].assists += p.assists || 0;
+          byMatchday[m.matchday].saves   += p.saves   || 0;
+          byMatchday[m.matchday].shots   += p.shots   || 0;
+        });
+      });
     });
-
-    txt += `  ─────────────────────────────────────────\n`;
-    if (teamData.money < 0) {
-      txt += `  DEUDA ACTUAL: $${Math.abs(teamData.money).toLocaleString()}\n\n`;
-    } else {
-      txt += `  SALDO ACTUAL: $${teamData.money.toLocaleString()}\n\n`;
-    }
-  });
-
-  const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `ZENITH_CONTABILIDAD_${new Date().toISOString().slice(0,10)}.txt`;
-  a.click();
-  URL.revokeObjectURL(url);
+    
+  return Object.values(byMatchday).sort((a,b) => a.matchday - b.matchday);
 }
