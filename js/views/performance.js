@@ -63,7 +63,12 @@ export function performanceView(){
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><div class="card-title"><span class="dot">◆</span>EVOLUCIÓN DE PRECIO (POR JORNADA)</div></div>
+        <div class="card-header">
+          <div class="card-title">
+            <span class="dot">◆</span>
+            ${_activeTab === 'players' ? 'EVOLUCIÓN DE PRECIO (POR JORNADA)' : 'EVOLUCIÓN DE ECONOMÍA'}
+          </div>
+        </div>
         <div style="position:relative; height:300px; width:100%;">
           <canvas id="perfEconomyChart"></canvas>
         </div>
@@ -127,10 +132,11 @@ function updateChartsData() {
     chartStats.data.labels = timeline.map(t => `J${t.matchday}`);
     chartStats.data.datasets = [
       { label: 'Goles', data: timeline.map(t => t.goals), borderColor: '#E6C476', backgroundColor: 'rgba(230,196,118,0.1)', tension: 0.3, fill: true },
-      { label: 'Asistencias', data: timeline.map(t => t.assists), borderColor: '#6FA8FF', backgroundColor: 'rgba(111,168,255,0.1)', tension: 0.3, fill: true }
+      { label: 'Asistencias', data: timeline.map(t => t.assists), borderColor: '#6FA8FF', backgroundColor: 'rgba(111,168,255,0.1)', tension: 0.3, fill: true },
+      { label: 'Salvadas', data: timeline.map(t => t.saves), borderColor: '#b388ff', backgroundColor: 'rgba(179,136,255,0.1)', tension: 0.3, fill: true },
+      { label: 'Tiros', data: timeline.map(t => t.shots), borderColor: '#ff8a65', backgroundColor: 'rgba(255,138,101,0.1)', tension: 0.3, fill: true }
     ];
 
-    // FIX: Leer historial y mostrar solo los que tienen matchday
     const history = (player.priceHistory || [])
       .filter(h => h.matchday)
       .sort((a,b) => a.matchday - b.matchday);
@@ -145,7 +151,8 @@ function updateChartsData() {
     } else {
       chartEconomy.data.labels = history.map(h => `J${h.matchday}`);
       chartEconomy.data.datasets = [{
-        label: 'Valor de Mercado ($)', data: history.map(h => h.price), borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.3, fill: true
+        label: 'Valor de Mercado ($)', data: history.map(h => h.price), borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.3, fill: true,
+        segment: { borderColor: ctx => ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0 ? '#E25C5C' : '#63C28A' }
       }];
     }
   } else {
@@ -156,7 +163,9 @@ function updateChartsData() {
     chartStats.data.labels = timeline.map(t => `J${t.matchday}`);
     chartStats.data.datasets = [
       { label: 'Goles', data: timeline.map(t => t.goals), borderColor: '#E6C476', backgroundColor: 'rgba(230,196,118,0.1)', tension: 0.3, fill: true },
-      { label: 'Asistencias', data: timeline.map(t => t.assists), borderColor: '#6FA8FF', backgroundColor: 'rgba(111,168,255,0.1)', tension: 0.3, fill: true }
+      { label: 'Asistencias', data: timeline.map(t => t.assists), borderColor: '#6FA8FF', backgroundColor: 'rgba(111,168,255,0.1)', tension: 0.3, fill: true },
+      { label: 'Salvadas', data: timeline.map(t => t.saves), borderColor: '#b388ff', backgroundColor: 'rgba(179,136,255,0.1)', tension: 0.3, fill: true },
+      { label: 'Tiros', data: timeline.map(t => t.shots), borderColor: '#ff8a65', backgroundColor: 'rgba(255,138,101,0.1)', tension: 0.3, fill: true }
     ];
 
     const ledger = db.economyLedger || [];
@@ -172,7 +181,9 @@ function updateChartsData() {
 
     chartEconomy.data.labels = balLabels.length ? balLabels : ['Actual'];
     chartEconomy.data.datasets = [{
-      label: 'Saldo Acumulado ($)', data: balData.length ? balData : [team.money || 0], borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.1, fill: true
+      label: 'Saldo Acumulado ($)', data: balData.length ? balData : [team.money || 0], tension: 0.1, fill: true,
+      borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)',
+      segment: { borderColor: ctx => ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0 ? '#E25C5C' : '#63C28A' }
     }];
   }
 
