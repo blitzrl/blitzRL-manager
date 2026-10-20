@@ -1277,3 +1277,43 @@ img.zenith-emoji{width:1.05em;height:1.05em;display:inline-block;vertical-align:
 .ai-team-logo-status { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .ai-team-logo-status.ok { color: var(--success); }
 .ai-team-logo-status.warn { color: var(--gold); }
+
+/* ============================================================
+   ECONOMY TAB — UI
+   ============================================================ */
+.eco-grid-4 {
+  display: grid;
+  grid-template-columns: 150px repeat(3, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.eco-cell {
+  display: flex;
+  align-items: center;
+}
+.eco-cell.head {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  font-weight: 600;
+  padding-bottom: 6px;
+}
+.eco-cell.bold {
+  font-size: 12.5px;
+  color: var(--silver-light);
+  font-weight: 600;
+}
+.eco-cell input {
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+  width: 100%;
+}
+
+.eco-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.eco-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+@media (max-width: 800px) {
+  .eco-grid-4 { grid-template-columns: 100px repeat(3, 1fr); }
+  .eco-grid-3, .eco-grid-2 { grid-template-columns: 1fr; }
+}
