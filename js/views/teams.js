@@ -42,14 +42,18 @@ function teamCard(t){
           ${t.logo ? `<img src="${t.logo}" class="team-logo-img">` : '<span class="team-logo-fallback">◆</span>'}
         </div>
         <div style="flex:1;min-width:0">
-          <div class="team-name">${t.name}</div>
-          <div class="team-coach">Coach: ${t.coach||'—'}</div>
-          <div style="margin-top:6px;font-size:11px;line-height:1.4">
-            <div style="color:var(--accent)">Valor plantilla: <b>$${squadValue.toLocaleString()}</b></div>
-            ${isDebt 
-              ? `<div style="color:var(--danger)">Deuda: <b>$${Math.abs(balance).toLocaleString()}</b></div>`
-              : `<div style="color:var(--success)">Saldo: <b>$${balance.toLocaleString()}</b></div>`
-            }
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+            <div>
+              <div class="team-name">${t.name}</div>
+              <div class="team-coach">Coach: ${t.coach||'—'}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;font-size:10.5px;font-weight:600">
+              <span class="chip chip-accent" style="font-size:9.5px;padding:2px 6px">Plantilla: $${squadValue.toLocaleString()}</span>
+              ${isDebt 
+                ? `<span class="chip" style="font-size:9.5px;padding:2px 6px;color:var(--danger);border-color:rgba(226,92,92,.35)">Deuda: $${Math.abs(balance).toLocaleString()}</span>`
+                : `<span class="chip" style="font-size:9.5px;padding:2px 6px;color:var(--success);border-color:rgba(99,194,138,.35)">Saldo: $${balance.toLocaleString()}</span>`
+              }
+            </div>
           </div>
         </div>
       </div>
@@ -240,7 +244,6 @@ function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, mod
       const newMoney = formState.money;
       const moneyDiff = newMoney - previousMoney;
 
-      // 1. Guardar equipo SIN modificar el dinero directamente
       mutate(d => {
         if(team){
           const t = d.teams.find(x=>x.id===team.id);
@@ -254,22 +257,15 @@ function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, mod
         }
       });
 
-      // 2. Registrar movimiento contable si hubo cambio
       if (team && moneyDiff !== 0) {
         recordTransaction({
-          teamId: team.id,
-          type: 'manual_adjust',
-          amount: moneyDiff,
-          reason: 'Ajuste manual desde formulario',
-          meta: { previousMoney, newMoney }
+          teamId: team.id, type: 'manual_adjust', amount: moneyDiff,
+          reason: 'Ajuste manual desde formulario', meta: { previousMoney, newMoney }
         });
       } else if (!team && newMoney > 0) {
         recordTransaction({
-          teamId: savedTeamId,
-          type: 'manual_adjust',
-          amount: newMoney,
-          reason: 'Saldo inicial de equipo',
-          meta: { previousMoney: 0, newMoney }
+          teamId: savedTeamId, type: 'manual_adjust', amount: newMoney,
+          reason: 'Saldo inicial de equipo', meta: { previousMoney: 0, newMoney }
         });
       }
 
@@ -283,9 +279,6 @@ function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, mod
   });
 }
 
-// ============================================================
-// FORMULARIO DE JUGADOR
-// ============================================================
 export function openPlayerForm(playerId=null, onSaved=null){
   const db = getDB();
   const player = playerId ? db.players.find(p=>p.id===playerId) : null;
