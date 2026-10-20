@@ -7,11 +7,15 @@ import { calculateTrend } from '../services/pig.js';
 export function ballonDorView(){
   const db = getDB();
   const activeDivisionId = state.divisionId;
+  
+  // FIX: aggregatePlayerStats devuelve pigHistory calculado
   const stats = aggregatePlayerStats({ divisionId: activeDivisionId })
     .filter(p => p.games > 0)
     .map(p => {
       const player = db.players.find(x => x.id === p.id);
-      return { ...p, pigTrend: calculateTrend(player) };
+      // calculateTrend espera un objeto con pigHistory. 
+      // Le pasamos el objeto stats que SI tiene el historial actualizado.
+      return { ...p, pigTrend: calculateTrend(p) }; 
     })
     .sort((a,b) => b.pig - a.pig);
 
