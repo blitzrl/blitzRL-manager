@@ -160,6 +160,59 @@ export function getDefaultTheme(){
 }
 
 // ============================================================
+// ECONOMÍA POR DEFECTO (FASE 0)
+// ============================================================
+export const ECONOMY_DEFAULTS = {
+  enabled: true,
+  allowDebt: true, // Si es false, no se permiten fichajes si el saldo es insuficiente
+  pigMultiplier: 1000, // 1 PIG = $1000
+  pigAllowNegative: true,
+  pigNegativeFloor: -25, // Límite inferior de PIG negativo
+  missedShotsPenalty: 0.5, // Penalización por tiros fallados en el PIG negativo
+  
+  // Precio base según rango y nivel (1, 2, 3)
+  basePriceByRank: {
+    'Bronze':         { 1: 3000,  2: 5000,  3: 8000 },
+    'Silver':         { 1: 10000, 2: 13000, 3: 16000 },
+    'Gold':           { 1: 18000, 2: 21000, 3: 24000 },
+    'Platinum':       { 1: 25000, 2: 28000, 3: 31000 },
+    'Diamond':        { 1: 22000, 2: 25000, 3: 28000 },
+    'Champion':       { 1: 35000, 2: 38000, 3: 42000 },
+    'Grand Champion': { 1: 45000, 2: 50000, 3: 55000 },
+    'SSL':            { 1: 65000, 2: 65000, 3: 65000 } // SSL no tiene divisiones
+  },
+
+  bonuses: {
+    // Bonus por victoria
+    winSimple:     { amount: 5000,  label: 'Victoria simple' },
+    winHard:       { amount: 8000,  label: 'Victoria complicada' },
+    winHumiliating:{ amount: 12000, label: 'Victoria humillante' },
+    
+    // Bonus de temporada
+    qualifyPlayoffs: { amount: 15000, label: 'Clasificar a Play-Offs' },
+    passRound:       { amount: 10000, label: 'Pasar de ronda (Playoffs)' },
+    winLeague:       { amount: 50000, label: 'Ganar la liga' },
+    promote:         { amount: 30000, label: 'Ascenso de división' },
+    
+    // Umbrales para detectar victoria humillante (Fase 4)
+    thresholds: {
+      BO3: { simpleMargin: 2, humiliatingGoalDiff: 4, humiliatingShutout: 2 },
+      BO5: { simpleMargin: 3, humiliatingGoalDiff: 5, humiliatingShutout: 3 },
+      BO7: { simpleMargin: 4, humiliatingGoalDiff: 6, humiliatingShutout: 4 }
+    }
+  },
+
+  sanctions: {
+    reasons: [
+      { id: 'no_show', label: 'No presentarse a partido', defaultAmount: 10000 },
+      { id: 'toxic',   label: 'Conducta tóxica',          defaultAmount: 5000 },
+      { id: 'late',    label: 'Impuntualidad',            defaultAmount: 2000 },
+      { id: 'other',   label: 'Otro (especificar)',       defaultAmount: 0 }
+    ]
+  }
+};
+
+// ============================================================
 // WIDGETS POR DEFECTO
 // ============================================================
 export function getDefaultWidgets(){
@@ -183,7 +236,6 @@ export function getDefaultWidgets(){
   ];
 }
 
-// Tipos de widget con metadata
 export const WIDGET_TYPES = [
   { id:'upcoming',        label:'Próximo Partido',       configurable:true  },
   { id:'standings',       label:'Tabla General',         configurable:false },
@@ -241,6 +293,7 @@ export function defaultDatabase(){
     trophyHistory: [],
     trophies: {},
     transferBannerBg: '',
+    economyLedger: [], // NUEVO
 
     archivedSeasons: [],
     viewSeasonId: null,
@@ -250,6 +303,7 @@ export function defaultDatabase(){
       pigWeights: { goal: 2.0, assist: 1.5, save: 1.0, missDivisor: 5 },
       badStreak: { enabled: true, minGames: 5, consecutiveLosses: 3, penalty: 0.10 },
       seasonEnd: { autoAssignTrophies: true, requireAllDivisions: true },
+      economy: JSON.parse(JSON.stringify(ECONOMY_DEFAULTS)), // NUEVO
       ai: {
         provider: 'gemini',
         apiKey: '',
