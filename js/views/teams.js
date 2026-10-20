@@ -31,7 +31,6 @@ function teamCard(t){
   }));
   const trophies = t.trophies || [];
   
-  // Economía
   const squadValue = getTeamSquadValue(t.id);
   const balance = t.money || 0;
   const isDebt = balance < 0;
@@ -69,11 +68,7 @@ function teamCard(t){
           </div>
           <span class="badge ${r.role==='CAPITÁN'?'badge-gold':''}">${r.role}</span>
         </div>`;}).join('')}
-      ${trophies.length > 0 ? `
-        <div class="card-vitrina">
-          ${renderVitrina(trophies, { compact: true })}
-        </div>
-      ` : ''}
+      ${trophies.length > 0 ? `<div class="card-vitrina">${renderVitrina(trophies, { compact: true })}</div>` : ''}
       <div class="card-actions">
         <button class="btn btn-sm" data-edit-team="${t.id}">EDITAR</button>
         <button class="btn btn-sm btn-danger" data-del-team="${t.id}">ELIMINAR</button>
@@ -96,7 +91,6 @@ export function bindTeamsEvents(){
         toast('Equipo eliminado','success');
         window.dispatchEvent(new HashChangeEvent('hashchange'));
       } catch(e) {
-        console.error('[ZENITH] Error eliminando equipo:', e);
         toast('Error al eliminar: ' + e.message, 'error');
       }
     })));
@@ -109,9 +103,6 @@ export function bindTeamsEvents(){
   });
 }
 
-// ============================================================
-// FORMULARIO DE EQUIPO
-// ============================================================
 export function openTeamForm(teamId=null){
   const db = getDB();
   const team = teamId ? db.teams.find(t=>t.id===teamId) : null;
@@ -123,7 +114,7 @@ export function openTeamForm(teamId=null){
     logo: team?.logo || '',
     name: team?.name || '',
     coach: team?.coach || '',
-    money: team?.money || 0, // NUEVO
+    money: team?.money || 0,
     roster: team ? JSON.parse(JSON.stringify(team.roster)) : []
   };
 
@@ -137,9 +128,7 @@ export function openTeamForm(teamId=null){
       <button class="btn btn-primary" id="saveTeam">GUARDAR</button>
     `,
     onMount: (root) => {
-      bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, {
-        close: () => closeTopModal()
-      });
+      bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, { close: () => closeTopModal() });
     }
   });
 }
@@ -149,26 +138,18 @@ function renderTeamFormBody(formState, db){
   return `
     <div class="field">
       <label>Logo</label>
-      <div class="dropzone" id="logoDrop">
-        ${formState.logo ? `<img src="${formState.logo}" class="dropzone-preview">` : 'Arrastra o haz click para subir una imagen'}
-      </div>
+      <div class="dropzone" id="logoDrop">${formState.logo ? `<img src="${formState.logo}" class="dropzone-preview">` : 'Subir imagen'}</div>
       <input type="file" id="logoInput" accept="image/*" hidden>
-      <small class="field-hint">Recomendado: PNG 512×512 px, cuadrado, con transparencia.</small>
     </div>
     <div class="row">
-      <div class="field"><label>Nombre del equipo</label><input class="input" id="tName" value="${formState.name}"></div>
+      <div class="field"><label>Nombre</label><input class="input" id="tName" value="${formState.name}"></div>
       <div class="field"><label>Coach</label><input class="input" id="tCoach" value="${formState.coach}"></div>
     </div>
-    
-    <!-- NUEVO CAMPO DE DINERO -->
     <div class="field">
       <label>Saldo / Dinero ($)</label>
       <input class="input" type="number" id="tMoney" value="${formState.money}">
-      <small class="field-hint" style="color:${isDebt ? 'var(--danger)' : 'var(--muted)'}">
-        ${isDebt ? '⚠️ El equipo tiene deuda actualmente.' : 'Edita el saldo. Los cambios manuales se registrarán en la hoja contable.'}
-      </small>
+      <small class="field-hint" style="color:${isDebt ? 'var(--danger)' : 'var(--muted)'}">Los cambios manuales se registrarán como "Ajuste manual".</small>
     </div>
-
     <div class="divider"></div>
     <div class="section-minihead">
       <span>ROSTER (máx. ${db.config.rosterRules.max})</span>
@@ -180,64 +161,36 @@ function renderTeamFormBody(formState, db){
 
 function renderRosterRows(formState, db, container){
   if(formState.roster.length === 0){
-    container.innerHTML = `<div class="roster-empty">Sin jugadores. Añade el primero con el botón de arriba.</div>`;
+    container.innerHTML = `<div class="roster-empty">Sin jugadores.</div>`;
     return;
   }
   container.innerHTML = formState.roster.map((r,i)=>{
     const p = db.players.find(x=>x.id===r.playerId);
-    const avatar = p?.profilePicture
-      ? `<img class="roster-avatar" src="${p.profilePicture}">`
-      : `<div class="roster-avatar roster-avatar-empty">${(p?.name||'?').slice(0,2).toUpperCase()}</div>`;
-    const flag = p?.nationalityCode ? getNationFlag(p.nationalityCode) : '';
     const rankColor = p ? getRankColor(p.rank, p.rankLevel) : 'var(--silver)';
-    const rankLine = p
-      ? `${p.rank||'—'}${p.rank!=='SSL' && p.rankDivision ? ' ' + p.rankDivision : ''} · ${p.platform||'—'}`
-      : '';
     return `
       <div class="roster-edit-row">
-        ${avatar}
+        ${p?.profilePicture ? `<img class="roster-avatar" src="${p.profilePicture}">` : `<div class="roster-avatar roster-avatar-empty">${(p?.name||'?').slice(0,2).toUpperCase()}</div>`}
         <div class="roster-edit-info">
-          <div class="roster-edit-name" style="color:${rankColor}">
-            ${p?.name || '<em>Sin nombre</em>'} ${flag}
-          </div>
-          <div class="roster-edit-meta">${rankLine}</div>
+          <div class="roster-edit-name" style="color:${rankColor}">${p?.name || '<em>Sin nombre</em>'}</div>
         </div>
-        <select class="select roster-edit-role" data-row-role="${i}">
-          ${['CAPITÁN','TITULAR','SUPLENTE'].map(x=>`<option ${r.role===x?'selected':''}>${x}</option>`).join('')}
-        </select>
+        <select class="select roster-edit-role" data-row-role="${i}">${['CAPITÁN','TITULAR','SUPLENTE'].map(x=>`<option ${r.role===x?'selected':''}>${x}</option>`).join('')}</select>
         <button class="btn btn-sm" data-row-edit="${i}" type="button">EDITAR</button>
-        ${p ? `<button class="btn btn-sm roster-config-btn" data-row-actions="${i}" type="button" title="Acciones del jugador">⚙</button>` : ''}
         <button class="btn btn-sm btn-danger" data-row-del="${i}" type="button">✕</button>
       </div>`;
   }).join('');
 
-  container.querySelectorAll('[data-row-del]').forEach(b =>
-    b.addEventListener('click', ()=>{
-      formState.roster.splice(+b.dataset.rowDel,1);
-      renderRosterRows(formState, db, container);
-    }));
-  container.querySelectorAll('[data-row-edit]').forEach(b =>
-    b.addEventListener('click', ()=>{
-      const idx = +b.dataset.rowEdit;
-      const pid = formState.roster[idx].playerId;
-      openPlayerForm(pid, (updatedPlayer)=>{
-        formState.roster[idx].playerId = updatedPlayer.id;
-        renderRosterRows(formState, db, container);
-      });
-    }));
-  container.querySelectorAll('[data-row-actions]').forEach(b =>
-    b.addEventListener('click', ()=>{
-      const idx = +b.dataset.rowActions;
-      const pid = formState.roster[idx].playerId;
-      if(pid) openRowActions(pid);
-    }));
+  container.querySelectorAll('[data-row-del]').forEach(b => b.addEventListener('click', ()=>{ formState.roster.splice(+b.dataset.rowDel,1); renderRosterRows(formState, db, container); }));
+  container.querySelectorAll('[data-row-edit]').forEach(b => b.addEventListener('click', ()=>{
+    const idx = +b.dataset.rowEdit;
+    openPlayerForm(formState.roster[idx].playerId, (updated) => { formState.roster[idx].playerId = updated.id; renderRosterRows(formState, db, container); });
+  }));
 }
 
 function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, modalCtl){
-  const rosterRows = root.querySelector('#rosterRows');
   const nameInput = root.querySelector('#tName');
   const coachInput = root.querySelector('#tCoach');
   const moneyInput = root.querySelector('#tMoney');
+  const rosterRows = root.querySelector('#rosterRows');
 
   nameInput.addEventListener('input', ()=> formState.name = nameInput.value);
   coachInput.addEventListener('input', ()=> formState.coach = coachInput.value);
@@ -261,8 +214,7 @@ function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, mod
   }
 
   root.querySelector('#addRosterRow').addEventListener('click', ()=>{
-    if(formState.roster.length >= db.config.rosterRules.max)
-      return toast('Máximo de jugadores alcanzado','error');
+    if(formState.roster.length >= db.config.rosterRules.max) return toast('Máximo alcanzado','error');
     openPlayerForm(null, (newPlayer)=>{
       formState.roster.push({ playerId: newPlayer.id, role: 'TITULAR' });
       renderRosterRows(formState, db, rosterRows);
@@ -274,8 +226,7 @@ function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, mod
   root.querySelector('#saveTeam').addEventListener('click', ()=>{
     try {
       const name = formState.name.trim();
-      const coach = formState.coach.trim();
-      if(!name) return toast('El nombre es obligatorio','error');
+      if(!name) return toast('Nombre obligatorio','error');
 
       rosterRows.querySelectorAll('[data-row-role]').forEach(inp => {
         const idx = +inp.dataset.rowRole;
@@ -285,27 +236,25 @@ function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, mod
       const validRoster = formState.roster.filter(r => db.players.find(p=>p.id===r.playerId));
       let savedTeamId = team?.id || null;
       
-      // Detectar si el dinero cambió
       const previousMoney = team ? (team.money || 0) : 0;
       const newMoney = formState.money;
       const moneyDiff = newMoney - previousMoney;
 
+      // 1. Guardar equipo SIN modificar el dinero directamente
       mutate(d => {
         if(team){
           const t = d.teams.find(x=>x.id===team.id);
-          if(!t) throw new Error('El equipo ya no existe');
-          Object.assign(t, { name, coach, logo: formState.logo, roster: validRoster, money: newMoney });
+          if(t) Object.assign(t, { name, coach: formState.coach, logo: formState.logo, roster: validRoster });
         } else {
           savedTeamId = uid('team');
           d.teams.push({
-            id: savedTeamId, name, tag:'', logo: formState.logo, coach,
-            divisionId: activeDivisionId, seasonId, roster: validRoster, trophies: [],
-            money: newMoney
+            id: savedTeamId, name, tag:'', logo: formState.logo, coach: formState.coach,
+            divisionId: activeDivisionId, seasonId, roster: validRoster, trophies: [], money: 0
           });
         }
       });
 
-      // Registrar ajuste manual en el Ledger si hubo cambios
+      // 2. Registrar movimiento contable si hubo cambio
       if (team && moneyDiff !== 0) {
         recordTransaction({
           teamId: team.id,
@@ -314,23 +263,28 @@ function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, mod
           reason: 'Ajuste manual desde formulario',
           meta: { previousMoney, newMoney }
         });
+      } else if (!team && newMoney > 0) {
+        recordTransaction({
+          teamId: savedTeamId,
+          type: 'manual_adjust',
+          amount: newMoney,
+          reason: 'Saldo inicial de equipo',
+          meta: { previousMoney: 0, newMoney }
+        });
       }
-
-      try { logChange(team?'edit':'create', 'team', savedTeamId, `Equipo "${name}" ${team?'editado':'creado'}`); }
-      catch(e){ console.warn(e); }
 
       toast('Equipo guardado','success');
       modalCtl.close();
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch(err) {
-      console.error('[ZENITH] Error guardando equipo:', err);
-      toast('Error al guardar: ' + (err.message || 'desconocido'), 'error');
+      console.error(err);
+      toast('Error al guardar: ' + err.message, 'error');
     }
   });
 }
 
 // ============================================================
-// FORMULARIO DE JUGADOR (Sin cambios en esta fase)
+// FORMULARIO DE JUGADOR
 // ============================================================
 export function openPlayerForm(playerId=null, onSaved=null){
   const db = getDB();
@@ -473,7 +427,7 @@ export function openPlayerForm(playerId=null, onSaved=null){
               saved = {
                 id: uid('ply'),
                 history: [], sanctions: [], pigHistory: [], pigTrend: '—',
-                careerSnapshots: [], trophies: [], status: 'owned', pendingTeamId: null,
+                careerSnapshots: [], trophies: [], priceHistory: [], status: 'owned', pendingTeamId: null,
                 ...payload
               };
               d.players.push(saved);
