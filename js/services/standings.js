@@ -5,8 +5,10 @@ import { getZoneColor } from '../data/nations.js';
 export function computeStandings(divisionId, seasonId){
   const db = getDB();
   const division = db.divisions.find(d => d.id === divisionId);
-  const teams = db.teams.filter(t => t.divisionId === divisionId && t.seasonId === seasonId);
-
+  
+  // FIX: Buscar equipos que estén en la división, sin importar si el seasonId no coincide exactamente
+  const teams = db.teams.filter(t => t.divisionId === divisionId);
+  
   const rows = new Map();
   teams.forEach(t => rows.set(t.id, {
     teamId: t.id, name: t.name, logo: t.logo,
@@ -17,7 +19,7 @@ export function computeStandings(divisionId, seasonId){
   }));
 
   const matches = db.matches.filter(m =>
-    m.divisionId === divisionId && m.seasonId === seasonId && m.status === 'finished'
+    m.divisionId === divisionId && m.status === 'finished' && (!seasonId || m.seasonId === seasonId)
   );
 
   matches.forEach(m => {
