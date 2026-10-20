@@ -4,21 +4,59 @@ import { state } from '../state.js';
 import { openModal, toast, confirmDialog, closeTopModal } from '../services/ui.js';
 import { logChange } from '../services/history.js';
 import { NATIONS, RANKS, PLATFORMS, RANK_LEVELS, RANK_DIVISIONS, getNationFlag, getRankColor } from '../data/nations.js';
-import { openRowActions } from '../services/transfers.js';
+import { openRowActions, openTransferModal } from '../services/transfers.js';
 import { renderVitrina } from '../services/trophies.js';
 import { recordTransaction, getTeamSquadValue } from '../services/economy.js';
+
+let _searchQuery = '';
 
 export function teamsView(){
   const db = getDB();
   const activeDivisionId = state.divisionId;
   const teams = db.teams.filter(t => !activeDivisionId || t.divisionId === activeDivisionId);
+  
+  // NUEVO: Calcular Agentes Libres (jugadores sin equipo)
+  const freeAgents = db.players.filter(p => !db.teams.some(t => (t.roster || []).some(r => r.playerId === p.id)));
+
   return `
-    <div class="page-head">
-      <h1 class="page-title">EQUIPOS</h1>
-      <button class="btn btn-primary" id="btnNewTeam">+ NUEVO EQUIPO</button>
+    <div class="page-head" style="align-items:flex-start; flex-direction:column; gap:16px;">
+      <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+        <h1 class="page-title">EQUIPOS</h1>
+        <button class="btn btn-primary" id="btnNewTeam">+ NUEVO EQUIPO</button>
+      </div>
+      <div style="width:100%; max-width:400px;">
+        <input class="input" type="text" id="teamSearchInput" placeholder="🔍 Buscar equipo o jugador..." value="${_searchQuery}">
+      </div>
     </div>
-    <div class="grid grid-3">
-      ${teams.map(t=>teamCard(t)).join('') || '<div class="card">Sin equipos registrados.</div>'}
+
+    <!-- NUEVA SECCIÓN: AGENTES LIBRES -->
+    ${freeAgents.length > 0 ? `
+      <div class="card" style="margin-bottom:24px; border-left:3px solid var(--gold);" data-searchable="agentes libres ${freeAgents.map(p => p.name).join(' ').toLowerCase()}">
+        <div class="card-header">
+          <div class="card-title" style="color:var(--gold)"><span class="dot" style="color:var(--gold)">◆</span>AGENTES LIBRES</div>
+          <span class="card-sub">${freeAgents.length} jugadores</span>
+        </div>
+        <div class="grid grid-3" style="padding-top:10px;">
+          ${freeAgents.map(p => `
+            <div class="card" style="padding:12px; background:var(--bg-graphite);">
+              <div class="player-cell" style="margin-bottom:10px;">
+                 ${p.profilePicture
+                    ? `<img src="${p.profilePicture}" class="player-cell-avatar">`
+                    : `<div class="player-cell-avatar player-cell-avatar-empty">${(p.name||'?').slice(0,2).toUpperCase()}</div>`}
+                 <div style="min-width:0;">
+                    <div class="player-cell-name" style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(p.name)}</div>
+                    <div style="font-size:10px; color:var(--muted);">${esc(p.rank || '—')} ${p.rankDivision && p.rank!=='SSL' ? p.rankDivision : ''}</div>
+                 </div>
+              </div>
+              <button class="btn btn-sm btn-primary" style="width:100%;" data-fichar-free-agent="${p.id}">FICHAR</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
+
+    <div class="grid grid-3" id="teamsGrid">
+      ${teams.map(t => teamCard(t)).join('') || '<div class="card">Sin equipos registrados.</div>'}
     </div>
   `;
 }
@@ -35,8 +73,11 @@ function teamCard(t){
   const balance = t.money || 0;
   const isDebt = balance < 0;
 
+  // FIX: Atributo para el buscador
+  const searchable = `${t.name} ${t.coach} ${roster.map(r => r.player?.name || '').join(' ')}`.toLowerCase();
+
   return `
-    <div class="card">
+    <div class="card" data-searchable="${searchable}">
       <div class="team-card-head" style="align-items:flex-start">
         <div class="team-logo-box">
           ${t.logo ? `<img src="${t.logo}" class="team-logo-img">` : '<span class="team-logo-fallback">◆</span>'}
@@ -105,6 +146,30 @@ export function bindTeamsEvents(){
       if(pid) location.hash = '#/players/' + pid;
     });
   });
+
+  // NUEVO: Evento para fichar agente libre
+  document.querySelectorAll('[data-fichar-free-agent]').forEach(btn => {
+    btn.addEventListener('click', () => {
+       openTransferModal(btn.dataset.ficharFreeAgent);
+    });
+  });
+
+  // NUEVO: Buscador en tiempo real
+  const searchInput = document.getElementById('teamSearchInput');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      _searchQuery = e.target.value.toLowerCase();
+      const cards = document.querySelectorAll('[data-searchable]');
+      cards.forEach(card => {
+        const text = card.dataset.searchable;
+        if (text.includes(_searchQuery)) {
+          card.style.display = ''; // Mostrar
+        } else {
+          card.style.display = 'none'; // Ocultar
+        }
+      });
+    });
+  }
 }
 
 export function openTeamForm(teamId=null){
@@ -466,4 +531,8 @@ export function compressImage(file, maxW, maxH){
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function esc(str){
+  return String(str ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
 }
