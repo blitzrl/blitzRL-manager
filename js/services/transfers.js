@@ -1,6 +1,3 @@
-// ============================================================
-// TRANSFERS — Lógica de mercado de jugadores
-// ============================================================
 import { getDB, mutate } from './storage.js';
 import { uid } from '../data/database.js';
 import { openModal, closeTopModal, closeAllModals, toast } from './ui.js';
@@ -71,6 +68,8 @@ export function doFreeAgent(playerId){
       }
 
       if (ft) ft.roster = (ft.roster || []).filter(r => r.playerId !== playerId);
+      
+      // FIX: Actualizar status y divisionId
       pl.status = 'free_agent';
       pl.divisionId = null;
       pl.pendingTeamId = null;
@@ -136,13 +135,13 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset, customPrice
 
       if (ft) ft.roster = (ft.roster || []).filter(r => r.playerId !== playerId);
 
+      // FIX: Actualizar status, divisionId y pendingTeamId
+      pl.divisionId = targetTeam.divisionId;
       if (goesPending){
         pl.status = 'pending';
-        pl.divisionId = targetTeam.divisionId;
         pl.pendingTeamId = targetTeamId;
       } else {
         pl.status = 'owned';
-        pl.divisionId = targetTeam.divisionId;
         pl.pendingTeamId = null;
         tt.roster.push({ playerId, role: 'SUPLENTE' });
       }
