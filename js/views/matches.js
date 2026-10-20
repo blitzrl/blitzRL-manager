@@ -6,7 +6,8 @@ import { AIService } from '../services/aiService.js';
 import { logChange } from '../services/history.js';
 import { swapTeamsInMatchday } from '../services/schedule.js';
 import { openMatchSummary } from './matchSummary.js';
-import { applyMatchBonuses, detectVictoryType } from '../services/economy.js';
+import { applyMatchBonuses, detectVictoryType, calculatePlayerPrice } from '../services/economy.js';
+import { aggregatePlayerStats } from '../services/statistics.js';
 
 export function matchesView(){
   const db = getDB();
@@ -515,11 +516,49 @@ function renderNewGame(container, m, A, B, activeRoster){
     const updatedM = getDB().matches.find(x => x.id === m.id);
     if (updatedM && updatedM.status === 'finished') {
       applyMatchBonuses(m.id);
+      updatePlayerPriceHistory(m.id); // FIX: Guardar historial por jornada
     }
 
     toast('Partida reportada','success');
     closeTopModal();
     window.dispatchEvent(new HashChangeEvent('hashchange'));
+  });
+}
+
+// FIX: Nueva función para calcular y guardar el valor de mercado en cada jornada
+function updatePlayerPriceHistory(matchId) {
+  const db = getDB();
+  const m = db.matches.find(x => x.id === matchId);
+  if (!m) return;
+
+  // Calculamos stats de la división y temporada actuales
+  const stats = aggregatePlayerStats({ divisionId: m.divisionId, seasonId: m.seasonId });
+  
+  // Sacamos los IDs de todos los jugadores que participaron en la serie
+  const playerIds = [...new Set(m.games.flatMap(g => g.players.map(p => p.playerId)))];
+
+  mutate(d => {
+    playerIds.forEach(pid => {
+      const p = d.players.find(x => x.id === pid);
+      if (!p) return;
+
+      const pStats = stats.find(s => s.id === pid) || { pig: 0 };
+      const priceData = calculatePlayerPrice(p, pStats, d.config.economy);
+      
+      p.priceHistory = p.priceHistory || [];
+      
+      // Evitar duplicados en la misma jornada
+      p.priceHistory = p.priceHistory.filter(h => !(h.matchday === m.matchday && h.seasonId === m.seasonId));
+      
+      // Guardar
+      p.priceHistory.push({
+        seasonId: m.seasonId,
+        matchday: m.matchday,
+        price: priceData.price,
+        pig: pStats.pig,
+        date: Date.now()
+      });
+    });
   });
 }
 
@@ -800,6 +839,7 @@ function renderAI(container, m, A, B){
     const updatedM = getDB().matches.find(x => x.id === m.id);
     if (updatedM && updatedM.status === 'finished') {
       applyMatchBonuses(m.id);
+      updatePlayerPriceHistory(m.id); // FIX: Guardar historial por jornada también en IA
     }
 
     toast('Reporte IA confirmado','success');
