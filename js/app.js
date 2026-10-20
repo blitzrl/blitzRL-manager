@@ -19,7 +19,8 @@ import { playoffsView, bindPlayoffsEvents } from './views/playoffs.js';
 import { configView, bindConfigEvents } from './views/config.js';
 import { ballonDorView, bindBallonDorEvents } from './views/ballonDor.js';
 import { marketView, bindMarketEvents } from './views/market.js';
-import { performanceView, bindPerformanceEvents } from './views/performance.js'; // NUEVO
+import { performanceView, bindPerformanceEvents } from './views/performance.js';
+import { destroyAllCarousels } from './views/widgetCarousel.js';
 
 window.addEventListener('error', e => console.error('[ZENITH] error:', e.error || e.message));
 window.addEventListener('unhandledrejection', e => console.error('[ZENITH] promise rejected:', e.reason));
@@ -236,7 +237,7 @@ registerRoute('playoffs',  playoffsView);
 registerRoute('config',    configView);
 registerRoute('ballonDor', ballonDorView);
 registerRoute('market',    marketView);
-registerRoute('performance', performanceView); // NUEVO
+registerRoute('performance', performanceView);
 
 // ============================================================
 // RENDER
@@ -244,9 +245,24 @@ registerRoute('performance', performanceView); // NUEVO
 let _currentViewFn = null;
 let _currentParams = [];
 
+// FIX: Función para destruir componentes pesados antes de cambiar de vista
+function cleanupView() {
+  // 1. Destruir gráficas de Chart.js si existen
+  if (window._chartStatsInstance) { window._chartStatsInstance.destroy(); window._chartStatsInstance = null; }
+  if (window._chartEconomyInstance) { window._chartEconomyInstance.destroy(); window._chartEconomyInstance = null; }
+  
+  // 2. Destruir intervalos de carruseles
+  if (typeof destroyAllCarousels === 'function') {
+    destroyAllCarousels();
+  }
+}
+
 function renderView(viewFn, params){
   const view = document.getElementById('view');
   try {
+    // FIX: Limpiar memoria antes de reescribir el HTML
+    cleanupView();
+
     view.innerHTML = viewFn(params);
 
     safeBind(bindDashboardEvents);
@@ -260,7 +276,7 @@ function renderView(viewFn, params){
     safeBind(bindPlayersEvents);
     safeBind(bindBallonDorEvents);
     safeBind(bindMarketEvents);
-    safeBind(bindPerformanceEvents); // NUEVO
+    safeBind(bindPerformanceEvents);
 
     updateActiveNav();
     updateDivisionHeader();
@@ -301,6 +317,9 @@ window.addEventListener('zenith:sync-pulled', () => {
   }
   refreshView();
 });
+
+// ... (Resto de funciones de NAV y HEADER sin cambios, se mantienen igual) ...
+// [NOTA: El resto de app.js del gestor se mantiene idéntico hasta el final]
 
 // ============================================================
 // NAV
