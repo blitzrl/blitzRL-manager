@@ -19,6 +19,7 @@ import { applyTheme, DEFAULT_THEME, exportTheme, importTheme, themePreviewBg } f
 import { exportLedgerTXT, applySanction } from '../services/economy.js';
 import { generatePlayers, simulateMatchdays } from '../services/simulator.js';
 import { aggregatePlayerStats } from '../services/statistics.js';
+import { renderNewsroomTab, bindNewsroomEvents } from './newsroom.js'; // NUEVO
 
 let configTab = 'general';
 let _authUser = null;
@@ -182,7 +183,7 @@ export function openLoginModal(){
             }
           }
 
-          if (configTab === 'data' || configTab === 'theme' || configTab === 'economy') {
+          if (configTab === 'data' || configTab === 'theme' || configTab === 'economy' || configTab === 'newsroom') {
             const dbCurr = getDB();
             const ai = dbCurr.config.ai || {};
             document.getElementById('configContent').innerHTML = renderConfigTab(configTab, dbCurr, ai);
@@ -319,6 +320,7 @@ export function configView(){
       <button class="config-tab ${configTab==='trophies'?'active':''}" data-config-tab="trophies">🏆 Trofeos</button>
       <button class="config-tab ${configTab==='ai'?'active':''}" data-config-tab="ai">🤖 IA</button>
       <button class="config-tab ${configTab==='economy'?'active':''}" data-config-tab="economy">💰 Economía</button>
+      <button class="config-tab ${configTab==='newsroom'?'active':''}" data-config-tab="newsroom">📰 Prensa IA</button>
       <button class="config-tab ${configTab==='data'?'active':''}" data-config-tab="data">💾 Datos</button>
     </div>
 
@@ -336,6 +338,7 @@ function renderConfigTab(tab, db, ai){
     case 'trophies': return renderTrophiesConfig(db);
     case 'ai': return renderAI(ai);
     case 'economy': return renderEconomyTab(db);
+    case 'newsroom': return renderNewsroomTab();
     case 'data': return renderData();
     default: return '';
   }
@@ -2238,6 +2241,7 @@ export function bindConfigEvents(){
   if (configTab === 'trophies') bindTrophiesConfig();
   if (configTab === 'theme') bindThemeTab();
   if (configTab === 'economy') bindEconomyTab();
+  if (configTab === 'newsroom') bindNewsroomEvents(); // NUEVO
 
   document.getElementById('aiToggleKey')?.addEventListener('click', () => {
     const el = document.getElementById('aiKey');
