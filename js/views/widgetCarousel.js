@@ -2,6 +2,9 @@
 // WIDGET CAROUSEL — Reutilizable, autoplay, dots, prev/next
 // ============================================================
 
+// FIX: Registro global para limpiar timers
+const _activeTimers = new Set();
+
 export function renderCarousel({ items, renderItem, instanceId, interval = 5, prefix = 'wc' }) {
   if(!items || items.length === 0) return '';
   if(items.length === 1) return renderItem(items[0], 0);
@@ -51,9 +54,10 @@ export function bindCarouselEvents(root = document){
       if(timerId) clearInterval(timerId);
       if(slides.length <= 1) return;
       timerId = setInterval(() => { if(!paused) next(); }, interval);
+      _activeTimers.add(timerId); // Registrar
     }
     function stopTimer(){
-      if(timerId){ clearInterval(timerId); timerId = null; }
+      if(timerId){ clearInterval(timerId); _activeTimers.delete(timerId); timerId = null; }
     }
 
     wc.querySelector(`[data-carousel-prev="${instanceId}"]`)?.addEventListener('click', (e) => {
@@ -79,9 +83,15 @@ export function bindCarouselEvents(root = document){
   });
 }
 
+// FIX: Función para limpiar todos los intervalos activos
+export function destroyAllCarousels() {
+  _activeTimers.forEach(timerId => clearInterval(timerId));
+  _activeTimers.clear();
+  document.querySelectorAll('.wc').forEach(wc => wc.dataset.bound = '0');
+}
+
 export function destroyCarousels(root = document){
   root.querySelectorAll('.wc[data-bound="1"]').forEach(wc => {
-    // El timer se limpia solo cuando el DOM se reemplaza; no hace falta más.
     wc.dataset.bound = '0';
   });
 }
