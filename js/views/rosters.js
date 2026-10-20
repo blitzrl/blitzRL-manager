@@ -1,9 +1,12 @@
 import { getDB } from '../services/storage.js';
 import { state } from '../state.js';
 import { aggregatePlayerStats } from '../services/statistics.js';
-import { getRankColor, getRankLabel } from '../data/nations.js'; // FIX: getRankLabel
+import { getRankColor, getRankLabel } from '../data/nations.js';
 import { computeStandings } from '../services/standings.js';
 import { renderVitrina } from '../services/trophies.js';
+import { openTransferModal } from '../services/transfers.js';
+
+let _searchQuery = '';
 
 export function rostersView(params = []){
   const db = getDB();
@@ -16,19 +19,56 @@ export function rostersView(params = []){
   }
 
   const teams = db.teams.filter(t => !state.divisionId || t.divisionId === state.divisionId);
+  
+  const freeAgents = db.players.filter(p => !db.teams.some(t => (t.roster || []).some(r => r.playerId === p.id)));
 
   return `
-    <h1 class="page-title" style="margin-bottom:20px">ROSTERS</h1>
-    <div class="grid grid-3">
+    <div class="page-head" style="align-items:flex-start; flex-direction:column; gap:16px;">
+      <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+        <h1 class="page-title">ROSTERS</h1>
+      </div>
+      <div style="width:100%; max-width:400px;">
+        <input class="input" type="text" id="teamSearchInput" placeholder="🔍 Buscar equipo o jugador..." value="${_searchQuery}">
+      </div>
+    </div>
+
+    <div class="grid grid-3" id="teamsGrid">
       ${teams.map(t => teamCardMini(t)).join('') || '<div class="card">Sin equipos registrados.</div>'}
     </div>
+
+    ${freeAgents.length > 0 ? `
+      <div class="card" style="margin-top:24px; border-left:3px solid var(--gold);" data-searchable="agentes libres ${freeAgents.map(p => p.name).join(' ').toLowerCase()}">
+        <div class="card-header">
+          <div class="card-title" style="color:var(--gold)"><span class="dot" style="color:var(--gold)">◆</span>AGENTES LIBRES</div>
+          <span class="card-sub">${freeAgents.length} jugadores</span>
+        </div>
+        <div class="grid grid-3" style="padding-top:10px;">
+          ${freeAgents.map(p => `
+            <div class="card" style="padding:12px; background:var(--bg-graphite); cursor:pointer;" data-open-player="${p.id}">
+              <div class="player-cell" style="margin-bottom:10px;">
+                 ${p.profilePicture
+                    ? `<img src="${p.profilePicture}" class="player-cell-avatar">`
+                    : `<div class="player-cell-avatar player-cell-avatar-empty">${(p.name||'?').slice(0,2).toUpperCase()}</div>`}
+                 <div style="min-width:0;">
+                    <div class="player-cell-name" style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(p.name)}</div>
+                    <div style="font-size:10px; color:var(--muted);">${esc(p.rank || '—')} ${p.rankDivision && p.rank!=='SSL' ? p.rankDivision : ''}</div>
+                 </div>
+              </div>
+              <button class="btn btn-sm btn-primary" style="width:100%;" data-fichar-free-agent="${p.id}">FICHAR</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
   `;
 }
 
 function teamCardMini(t){
   const db = getDB();
+  const searchable = `${t.name} ${t.coach} ${(t.roster||[]).map(r => db.players.find(x=>x.id===r.playerId)?.name || '').join(' ')}`.toLowerCase();
+
   return `
-    <div class="card team-card" data-team-profile="${t.id}">
+    <div class="card team-card" data-team-profile="${t.id}" data-searchable="${searchable}">
       <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
         <div class="team-logo-box-lg">
           ${t.logo ? `<img src="${t.logo}" class="team-logo-img">` : '<span class="team-logo-fallback">◆</span>'}
@@ -68,7 +108,6 @@ function teamProfileView(team){
     saves: a.saves + s.saves, shots: a.shots + s.shots, wins: a.wins + s.wins, losses: a.losses + s.losses
   }), { games:0, goals:0, assists:0, saves:0, shots:0, wins:0, losses:0 });
 
-  // FIX: Proteger contra team.divisionId nulo
   const season = db.seasons.find(s => s.active) || db.seasons[0];
   let rank = null;
   if (team.divisionId && season) {
@@ -112,9 +151,9 @@ function teamProfileView(team){
           const p = db.players.find(x=>x.id===r.playerId) || {};
           const s = stats.find(x=>x.id===p.id) || {};
           const rankColor = p.rank ? getRankColor(p.rank, p.rankLevel) : 'var(--silver)';
-          const rankLine = getRankLabel(p.rank, p.rankLevel, p.rankDivision);
+          const rankLine = getRankLabel(p.rank, p.rankLevel, p.rankDivision); 
           return `
-            <div class="roster-row" style="padding:12px 0;border-bottom:1px solid var(--border-soft)">
+            <div class="roster-row" style="padding:12px 0;border-bottom:1px solid var(--border-soft); cursor:pointer;" data-open-player="${p.id}">
               <div style="flex:1;min-width:0">
                 <div style="display:flex;align-items:center;gap:8px">
                   ${p.profilePicture
@@ -171,8 +210,45 @@ function computeTeamPhase(teamId){
   return null;
 }
 
-// FIX: ESTA ES LA EXPORTACIÓN QUE FALTABA Y ROMPÍA APP.JS
 export function bindRostersEvents(){
   document.querySelectorAll('[data-team-profile]').forEach(card =>
     card.addEventListener('click', ()=>{ location.hash = '#/rosters/' + card.dataset.teamProfile; }));
+
+  // FIX: Evento para fichar agente libre
+  document.querySelectorAll('[data-fichar-free-agent]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+       e.stopPropagation();
+       openTransferModal(btn.dataset.ficharFreeAgent);
+    });
+  });
+
+  // FIX: Hacer clickeables a los jugadores en las tarjetas de equipo
+  document.querySelectorAll('[data-open-player]').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if(e.target.closest('button')) return; 
+      const pid = row.dataset.openPlayer;
+      if(pid) location.hash = '#/players/' + pid;
+    });
+  });
+
+  // Buscador en tiempo real
+  const searchInput = document.getElementById('teamSearchInput');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      _searchQuery = e.target.value.toLowerCase();
+      const cards = document.querySelectorAll('[data-searchable]');
+      cards.forEach(card => {
+        const text = card.dataset.searchable;
+        if (text.includes(_searchQuery)) {
+          card.style.display = ''; // Mostrar
+        } else {
+          card.style.display = 'none'; // Ocultar
+        }
+      });
+    });
+  }
+}
+
+function esc(str){
+  return String(str ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
 }
