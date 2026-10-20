@@ -13,6 +13,7 @@ import { AIService } from '../services/aiService.js';
 import { openModal, toast, closeTopModal } from '../services/ui.js';
 import { logChange } from '../services/history.js';
 import { openMatchSummary } from './matchSummary.js';
+import { applyBracketMatchBonuses, detectVictoryType } from '../services/economy.js';
 
 // ============================================================
 // LAYOUT
@@ -129,9 +130,6 @@ export function bindPlayoffsEvents(){
   initBracketDragDrop();
 }
 
-// ============================================================
-// RENDER DEL BRACKET
-// ============================================================
 function renderBracketCanvas(){
   const canvas = document.getElementById('bracketCanvas');
   if(!canvas) return;
@@ -253,6 +251,12 @@ function renderNode(m, roundId, idx, x, y, isPlayIn){
   const reported = !!m.winnerId;
   const isBye = m.isBye === true;
   const hasGames = (m.games || []).length > 0;
+  const db = getDB();
+
+  let vType = null;
+  if (reported && !isBye) {
+    vType = detectVictoryType(m.games, m.format, m.winnerId, m.teamA?.teamId, m.teamB?.teamId, db.config.economy);
+  }
 
   const wonA = (m.games || []).filter(g => g.scoreA > g.scoreB).length;
   const wonB = (m.games || []).filter(g => g.scoreB > g.scoreA).length;
@@ -264,7 +268,7 @@ function renderNode(m, roundId, idx, x, y, isPlayIn){
   if(isBye){
     footHTML = `<span class="bracket-v6-foot-text muted">— BYE —</span>`;
   } else if(reported){
-    footHTML = `<span class="bracket-v6-foot-text">✔ FINAL</span>`;
+    footHTML = `<span class="bracket-v6-foot-text">✔ FINAL ${vType ? vType.emoji : ''}</span>`;
   } else if(hasGames){
     footHTML = `<span class="badge badge-live" style="font-size:9px;padding:2px 6px">EN JUEGO</span>
                 <button class="btn btn-sm btn-primary" data-report-bracket="${roundId}:${idx}">REPORTAR</button>`;
@@ -300,7 +304,6 @@ function renderRow(team, isWinner, side, match, roundId, idx, wonA, wonB, isBye)
   }
   const seed = team.pos ? `${team.pos}` : '–';
 
-  // Score a mostrar
   let scoreDisplay = '';
   let scoreColor = 'var(--muted)';
   if(isBye){
@@ -338,9 +341,6 @@ function getFormatForRound(roundId, division){
   return division.config.playInFormat || 'BO5';
 }
 
-// ============================================================
-// DRAG & DROP
-// ============================================================
 function initBracketDragDrop(){
   let dragSrc = null;
 
@@ -440,9 +440,6 @@ function swapTeamsInBracket(src, dst){
   });
 }
 
-// ============================================================
-// REPORTER
-// ============================================================
 function openBracketReporter(roundId, matchIndex){
   try {
     const db = getDB();
@@ -558,7 +555,6 @@ function renderManual(m, A, B, roundId, matchIndex, format){
     ` : ''}
   `;
 
-  // Cambio de formato
   const formatSel = container.querySelector('#bpFormat');
   if(formatSel && !finished){
     formatSel.addEventListener('change', (e) => {
@@ -569,7 +565,6 @@ function renderManual(m, A, B, roundId, matchIndex, format){
     });
   }
 
-  // Reportar partida
   if(!finished){
     container.querySelector('#bpReport').addEventListener('click', () => {
       const liveContainer = document.querySelector('#bracketTabManual');
@@ -601,6 +596,10 @@ function renderManual(m, A, B, roundId, matchIndex, format){
       try {
         reportBracketMatch(state.divisionId || getDB().divisions[0].id, roundId, matchIndex, { scoreA, scoreB, players });
         logChange('report', 'playoffs', null, `Bracket ${roundId}: ${A.name} ${scoreA}-${scoreB} ${B.name}`);
+        
+        // Aplicar bonus si se cerró la serie
+        applyBracketMatchBonuses(state.divisionId || getDB().divisions[0].id, roundId, matchIndex);
+
         toast('Partida reportada', 'success');
         closeTopModal();
         window.dispatchEvent(new HashChangeEvent('hashchange'));
@@ -908,6 +907,10 @@ function renderAI(m, A, B, roundId, matchIndex){
     try {
       reportBracketMatch(state.divisionId || getDB().divisions[0].id, roundId, matchIndex, { scoreA, scoreB, players });
       logChange('report-ai', 'playoffs', null, `Reporte IA (${scoreA}-${scoreB})`);
+      
+      // Aplicar bonus
+      applyBracketMatchBonuses(state.divisionId || getDB().divisions[0].id, roundId, matchIndex);
+
       toast('Partida reportada', 'success');
       closeTopModal();
       window.dispatchEvent(new HashChangeEvent('hashchange'));
