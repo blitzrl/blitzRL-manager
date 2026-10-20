@@ -31,8 +31,6 @@ export function aggregatePlayerStats({ divisionId=null, seasonId=null, teamId=nu
 
   const teamById = new Map(db.teams.map(t => [t.id, t]));
 
-  // ✅ FIX Bug 1: vincular jugadores con sus equipos desde el roster
-  // (independientemente de si tienen partidos o no)
   db.teams.forEach(team => {
     if(teamId && team.id !== teamId) return;
     if(divisionId && team.divisionId !== divisionId) return;
@@ -138,4 +136,50 @@ export function computeRankings(allStats){
     pig:        rankBy('pig'),
     total:      eligible.length
   };
+}
+
+// ============================================================
+// TIMELINE (JORNADA A JORNADA)
+// ============================================================
+export function getPlayerTimeline(playerId, { seasonId, divisionId } = {}) {
+  const db = getDB();
+  const byMatchday = {};
+  
+  db.matches
+    .filter(m => (!seasonId || m.seasonId === seasonId) && (!divisionId || m.divisionId === divisionId))
+    .forEach(m => {
+      (m.games || []).forEach(g => {
+        (g.players || []).filter(p => p.playerId === playerId).forEach(p => {
+          if (!byMatchday[m.matchday]) byMatchday[m.matchday] = { matchday: m.matchday, goals: 0, assists: 0, saves: 0, shots: 0 };
+          byMatchday[m.matchday].goals   += p.goals   || 0;
+          byMatchday[m.matchday].assists += p.assists || 0;
+          byMatchday[m.matchday].saves   += p.saves   || 0;
+          byMatchday[m.matchday].shots   += p.shots   || 0;
+        });
+      });
+    });
+    
+  return Object.values(byMatchday).sort((a,b) => a.matchday - b.matchday);
+}
+
+export function getTeamTimeline(teamId, { seasonId, divisionId } = {}) {
+  const db = getDB();
+  const byMatchday = {};
+  
+  db.matches
+    .filter(m => (!seasonId || m.seasonId === seasonId) && (!divisionId || m.divisionId === divisionId))
+    .forEach(m => {
+      if (m.teamAId !== teamId && m.teamBId !== teamId) return;
+      (m.games || []).forEach(g => {
+        (g.players || []).filter(p => p.teamId === teamId).forEach(p => {
+          if (!byMatchday[m.matchday]) byMatchday[m.matchday] = { matchday: m.matchday, goals: 0, assists: 0, saves: 0, shots: 0 };
+          byMatchday[m.matchday].goals   += p.goals   || 0;
+          byMatchday[m.matchday].assists += p.assists || 0;
+          byMatchday[m.matchday].saves   += p.saves   || 0;
+          byMatchday[m.matchday].shots   += p.shots   || 0;
+        });
+      });
+    });
+    
+  return Object.values(byMatchday).sort((a,b) => a.matchday - b.matchday);
 }
