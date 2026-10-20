@@ -15,7 +15,6 @@ export function teamsView(){
   const activeDivisionId = state.divisionId;
   const teams = db.teams.filter(t => !activeDivisionId || t.divisionId === activeDivisionId);
   
-  // NUEVO: Calcular Agentes Libres (jugadores sin equipo)
   const freeAgents = db.players.filter(p => !db.teams.some(t => (t.roster || []).some(r => r.playerId === p.id)));
 
   return `
@@ -29,16 +28,20 @@ export function teamsView(){
       </div>
     </div>
 
-    <!-- NUEVA SECCIÓN: AGENTES LIBRES -->
+    <div class="grid grid-3" id="teamsGrid">
+      ${teams.map(t => teamCard(t)).join('') || '<div class="card">Sin equipos registrados.</div>'}
+    </div>
+
+    <!-- FIX: CUADRO DE AGENTES LIBRES MOVIDO ABAJO -->
     ${freeAgents.length > 0 ? `
-      <div class="card" style="margin-bottom:24px; border-left:3px solid var(--gold);" data-searchable="agentes libres ${freeAgents.map(p => p.name).join(' ').toLowerCase()}">
+      <div class="card" style="margin-top:24px; border-left:3px solid var(--gold);" data-searchable="agentes libres ${freeAgents.map(p => p.name).join(' ').toLowerCase()}">
         <div class="card-header">
           <div class="card-title" style="color:var(--gold)"><span class="dot" style="color:var(--gold)">◆</span>AGENTES LIBRES</div>
           <span class="card-sub">${freeAgents.length} jugadores</span>
         </div>
         <div class="grid grid-3" style="padding-top:10px;">
           ${freeAgents.map(p => `
-            <div class="card" style="padding:12px; background:var(--bg-graphite);">
+            <div class="card" style="padding:12px; background:var(--bg-graphite); cursor:pointer;" data-open-player="${p.id}">
               <div class="player-cell" style="margin-bottom:10px;">
                  ${p.profilePicture
                     ? `<img src="${p.profilePicture}" class="player-cell-avatar">`
@@ -54,10 +57,6 @@ export function teamsView(){
         </div>
       </div>
     ` : ''}
-
-    <div class="grid grid-3" id="teamsGrid">
-      ${teams.map(t => teamCard(t)).join('') || '<div class="card">Sin equipos registrados.</div>'}
-    </div>
   `;
 }
 
@@ -73,7 +72,6 @@ function teamCard(t){
   const balance = t.money || 0;
   const isDebt = balance < 0;
 
-  // FIX: Atributo para el buscador
   const searchable = `${t.name} ${t.coach} ${roster.map(r => r.player?.name || '').join(' ')}`.toLowerCase();
 
   return `
@@ -103,7 +101,7 @@ function teamCard(t){
       ${roster.map(r=>{
         const rankColor = r.player ? getRankColor(r.player.rank, r.player.rankLevel) : 'var(--silver)';
         return `
-        <div class="roster-row" data-open-player="${r.player?.id||''}">
+        <div class="roster-row" data-open-player="${r.player?.id||''}" style="cursor:pointer;">
           <div class="roster-row-main">
             ${r.player?.profilePicture
               ? `<img class="roster-avatar" src="${r.player.profilePicture}">`
@@ -139,22 +137,23 @@ export function bindTeamsEvents(){
         toast('Error al eliminar: ' + e.message, 'error');
       }
     })));
+  
+  // FIX: Hacer clickeables a los jugadores en las tarjetas de equipo y agentes libres
   document.querySelectorAll('[data-open-player]').forEach(row => {
     row.addEventListener('click', (e) => {
-      if(e.target.closest('button')) return;
+      if(e.target.closest('button')) return; // Evitar que el botón Fichar dispare esto
       const pid = row.dataset.openPlayer;
       if(pid) location.hash = '#/players/' + pid;
     });
   });
 
-  // NUEVO: Evento para fichar agente libre
   document.querySelectorAll('[data-fichar-free-agent]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+       e.stopPropagation();
        openTransferModal(btn.dataset.ficharFreeAgent);
     });
   });
 
-  // NUEVO: Buscador en tiempo real
   const searchInput = document.getElementById('teamSearchInput');
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
