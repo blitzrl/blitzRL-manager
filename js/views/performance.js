@@ -10,9 +10,42 @@ import { aggregatePlayerStats } from '../services/statistics.js';
 let _activeTab = 'players';
 let _selectedPlayerId = null;
 let _selectedTeamId = null;
+let _showHistory = false;
 
 let chartStats = null;
 let chartEconomy = null;
+
+// Plugin personalizado para dibujar la línea vertical cuando cambia la división
+const divisionLinePlugin = {
+  id: 'divisionLine',
+  beforeDraw: (chart) => {
+    if (chart.config.type !== 'line' || !chart.data.rawHistory) return;
+    const ctx = chart.ctx;
+    const xAxis = chart.scales.x;
+    const yAxis = chart.scales.y;
+    
+    let lastDivId = null;
+    
+    chart.data.rawHistory.forEach((h, i) => {
+      if (lastDivId !== null && h.divisionId !== lastDivId) {
+        const x1 = xAxis.getPixelForTick(i - 1);
+        const x2 = xAxis.getPixelForTick(i);
+        const xMid = (x1 + x2) / 2;
+        
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([5, 5]);
+        ctx.moveTo(xMid, yAxis.top);
+        ctx.lineTo(xMid, yAxis.bottom);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#8D929A';
+        ctx.stroke();
+        ctx.restore();
+      }
+      lastDivId = h.divisionId;
+    });
+  }
+};
 
 export function performanceView(){
   const db = getDB();
@@ -57,7 +90,14 @@ export function performanceView(){
 
     <div class="grid grid-2">
       <div class="card">
-        <div class="card-header"><div class="card-title"><span class="dot">◆</span>RENDIMIENTO POR JORNADA</div></div>
+        <div class="card-header">
+          <div class="card-title"><span class="dot">◆</span>RENDIMIENTO POR JORNADA</div>
+          ${_activeTab === 'players' ? `
+            <label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--muted);">
+              <input type="checkbox" id="perfShowHistory" ${_showHistory ? 'checked' : ''}> Historial completo
+            </label>
+          ` : ''}
+        </div>
         <div style="position:relative; height:300px; width:100%;">
           <canvas id="perfStatsChart"></canvas>
         </div>
@@ -100,6 +140,11 @@ export function bindPerformanceEvents(){
     updateChartsData();
   });
 
+  document.getElementById('perfShowHistory')?.addEventListener('change', (e) => {
+    _showHistory = e.target.checked;
+    updateChartsData();
+  });
+
   renderCharts();
 }
 
@@ -108,12 +153,59 @@ function renderCharts() {
   Chart.defaults.color = '#8D929A';
   Chart.defaults.borderColor = '#25272B';
 
+  // Registrar el plugin si no está registrado
+  if (!Chart.registry.plugins.get('divisionLine')) {
+    Chart.register(divisionLinePlugin);
+  }
+
   const ctxStats = document.getElementById('perfStatsChart');
   const ctxEco = document.getElementById('perfEconomyChart');
   if (!ctxStats || !ctxEco) return;
 
-  chartStats = new Chart(ctxStats, { type: 'line', data: { labels: [], datasets: [] } });
-  chartEconomy = new Chart(ctxEco, { type: 'line', data: { labels: [], datasets: [] } });
+  chartStats = new Chart(ctxStats, { 
+    type: 'line', 
+    data: { labels: [], datasets: [] },
+    options: {
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              let label = context.dataset.label || '';
+              if (label) label += ': ';
+              if (context.parsed.y !== null) label += context.parsed.y;
+              return label;
+            }
+          }
+        }
+      }
+    }
+  });
+  
+  chartEconomy = new Chart(ctxEco, { 
+    type: 'line', 
+    data: { labels: [], datasets: [] },
+    options: {
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              let label = context.dataset.label || '';
+              if (label) label += ': ';
+              if (context.parsed.y !== null) label += '$' + context.parsed.y.toLocaleString();
+              
+              if (context.dataset.label === 'Valor de Mercado ($)' && context.chart.data.rawHistory) {
+                const histItem = context.chart.data.rawHistory[context.dataIndex];
+                if (histItem && histItem.teamName) {
+                  label += ` (${histItem.teamName})`;
+                }
+              }
+              return label;
+            }
+          }
+        }
+      }
+    }
+  });
   
   updateChartsData();
 }
@@ -128,7 +220,9 @@ function updateChartsData() {
     const player = db.players.find(p => p.id === _selectedPlayerId);
     if (!player) return;
 
-    const timeline = getPlayerTimeline(player.id, { seasonId: season?.id, divisionId: state.divisionId });
+    const divisionFilter = _showHistory ? null : state.divisionId;
+    const timeline = getPlayerTimeline(player.id, { seasonId: season?.id, divisionId: divisionFilter });
+    
     chartStats.data.labels = timeline.map(t => `J${t.matchday}`);
     chartStats.data.datasets = [
       { label: 'Goles', data: timeline.map(t => t.goals), borderColor: '#E6C476', backgroundColor: 'rgba(230,196,118,0.1)', tension: 0.3, fill: true },
@@ -141,6 +235,8 @@ function updateChartsData() {
       .filter(h => h.matchday)
       .sort((a,b) => a.matchday - b.matchday);
 
+    chartEconomy.data.rawHistory = history;
+
     if (history.length === 0) {
       const stats = aggregatePlayerStats().find(s => s.id === player.id);
       const currentPriceData = calculatePlayerPrice(player, stats || {}, db.config.economy);
@@ -149,10 +245,30 @@ function updateChartsData() {
         label: 'Valor de Mercado ($)', data: [currentPriceData.price || 1000], borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.3, fill: true
       }];
     } else {
-      chartEconomy.data.labels = history.map(h => `J${h.matchday}`);
+      let lastDiv = null;
+      let labels = [];
+      history.forEach(h => {
+        const div = db.divisions.find(d => d.id === h.divisionId);
+        const divName = div ? div.name : 'Div';
+        if (lastDiv !== h.divisionId) {
+          labels.push(`${divName} J${h.matchday}`);
+          lastDiv = h.divisionId;
+        } else {
+          labels.push(`J${h.matchday}`);
+        }
+      });
+
+      chartEconomy.data.labels = labels;
       chartEconomy.data.datasets = [{
-        label: 'Valor de Mercado ($)', data: history.map(h => h.price), borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.3, fill: true,
-        segment: { borderColor: ctx => ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0 ? '#E25C5C' : '#63C28A' }
+        label: 'Valor de Mercado ($)', data: history.map(h => h.price), tension: 0.3,
+        fill: {
+          target: 'origin',
+          above: 'rgba(99,194,138,0.1)',
+          below: 'rgba(226,92,92,0.1)'
+        },
+        segment: {
+          borderColor: ctx => ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0 ? '#E25C5C' : '#63C28A'
+        }
       }];
     }
   } else {
@@ -181,9 +297,15 @@ function updateChartsData() {
 
     chartEconomy.data.labels = balLabels.length ? balLabels : ['Actual'];
     chartEconomy.data.datasets = [{
-      label: 'Saldo Acumulado ($)', data: balData.length ? balData : [team.money || 0], tension: 0.1, fill: true,
-      borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)',
-      segment: { borderColor: ctx => ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0 ? '#E25C5C' : '#63C28A' }
+      label: 'Saldo Acumulado ($)', data: balData.length ? balData : [team.money || 0], tension: 0.1,
+      fill: {
+        target: 'origin',
+        above: 'rgba(99,194,138,0.1)',
+        below: 'rgba(226,92,92,0.1)'
+      },
+      segment: {
+        borderColor: ctx => ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0 ? '#E25C5C' : '#63C28A'
+      }
     }];
   }
 
