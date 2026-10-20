@@ -1,10 +1,11 @@
 // ============================================================
-// PERFORMANCE VIEW (Gestor)
+// PERFORMANCE VIEW (Gestor y Visualizador)
 // ============================================================
 import { getDB } from '../services/storage.js';
 import { state } from '../state.js';
 import { getPlayerTimeline, getTeamTimeline } from '../services/statistics.js';
 import { calculatePlayerPrice } from '../services/economy.js';
+import { aggregatePlayerStats } from '../services/statistics.js';
 
 let _activeTab = 'players';
 let _selectedPlayerId = null;
@@ -12,6 +13,8 @@ let _selectedTeamId = null;
 
 export function performanceView(){
   const db = getDB();
+  if (!db) return `<div class="card">Cargando...</div>`;
+
   const season = db.seasons.find(s => s.active) || db.seasons[0];
   const division = db.divisions.find(d => d.id === state.divisionId) || db.divisions[0];
   
@@ -33,15 +36,13 @@ export function performanceView(){
     <div class="card" style="margin-bottom:20px">
       <div class="row">
         ${_activeTab === 'players' ? `
-          <div class="field">
-            <label>Jugador</label>
+          <div class="field"><label>Jugador</label>
             <select class="select" id="perf-player-select">
               ${players.map(p => `<option value="${p.id}" ${p.id === _selectedPlayerId ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
             </select>
           </div>
         ` : `
-          <div class="field">
-            <label>Equipo</label>
+          <div class="field"><label>Equipo</label>
             <select class="select" id="perf-team-select">
               ${teams.map(t => `<option value="${t.id}" ${t.id === _selectedTeamId ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
             </select>
@@ -52,25 +53,28 @@ export function performanceView(){
     </div>
 
     <div class="grid grid-2">
-      <div class="card" style="min-height: 400px; display: flex; flex-direction: column;">
+      <!-- FORZAMOS LA ALTURA A 300PX PARA QUE CHART.JS NO COLAPSE -->
+      <div class="card">
         <div class="card-header"><div class="card-title"><span class="dot">◆</span>RENDIMIENTO POR JORNADA</div></div>
-        <div style="flex:1; position:relative; min-height:300px;"><canvas id="perfStatsChart"></canvas></div>
+        <div style="position:relative; height:300px; width:100%;">
+          <canvas id="perfStatsChart"></canvas>
+        </div>
       </div>
-      <div class="card" style="min-height: 400px; display: flex; flex-direction: column;">
+      <div class="card">
         <div class="card-header"><div class="card-title"><span class="dot">◆</span>EVOLUCIÓN DE PRECIO</div></div>
-        <div style="flex:1; position:relative; min-height:300px;"><canvas id="perfEconomyChart"></canvas></div>
+        <div style="position:relative; height:300px; width:100%;">
+          <canvas id="perfEconomyChart"></canvas>
+        </div>
       </div>
     </div>
   `;
 }
 
 export function bindPerformanceEvents(){
-  // Destruir instancias previas si el canvas cambió
   const ctxStats = document.getElementById('perfStatsChart');
   const ctxEco = document.getElementById('perfEconomyChart');
   if (!ctxStats || !ctxEco) return;
 
-  // Limpiar gráficos viejos si existen
   if (window._chartStatsInstance) { window._chartStatsInstance.destroy(); window._chartStatsInstance = null; }
   if (window._chartEconomyInstance) { window._chartEconomyInstance.destroy(); window._chartEconomyInstance = null; }
 
@@ -126,11 +130,12 @@ function updateChartsData() {
 
     const history = player.priceHistory || [];
     if (history.length === 0) {
-      // Si no hay historial, mostrar el precio actual calculado
-      const currentPriceData = calculatePlayerPrice(player, player.seasonStats || {}, db.config.economy);
+      // FIX: Si no hay historial, calculamos su precio actual y lo mostramos.
+      const stats = aggregatePlayerStats().find(s => s.id === player.id);
+      const currentPriceData = calculatePlayerPrice(player, stats || {}, db.config.economy);
       window._chartEconomyInstance.data.labels = [season?.name || 'Actual'];
       window._chartEconomyInstance.data.datasets = [{
-        label: 'Valor de Mercado ($)', data: [currentPriceData.price], borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.3, fill: true
+        label: 'Valor de Mercado ($)', data: [currentPriceData.price || 1000], borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.3, fill: true
       }];
     } else {
       window._chartEconomyInstance.data.labels = history.map(h => h.seasonName);
