@@ -201,7 +201,7 @@ export function openLoginModal(){
 }
 
 // ============================================================
-// MODAL DE PUBLICAR (FORZAR PUSH MANUAL)
+// MODAL DE PUBLICAR
 // ============================================================
 export function openPublishModal(){
   const db = getDB();
@@ -1077,21 +1077,21 @@ function renderEconomyTab(db){
         <div class="row">
           <div class="field">
             <label>Multiplicador PIG (×)</label>
-            <input class="input" type="number" id="ecoPigMult" value="${eco.pigMultiplier}">
+            <input class="input" type="number" id="ecoPigMult" value="${eco.pigMultiplier ?? 1000}">
           </div>
           <div class="field">
             <label>Piso del PIG Negativo</label>
-            <input class="input" type="number" id="ecoPigFloor" value="${eco.pigNegativeFloor}">
+            <input class="input" type="number" id="ecoPigFloor" value="${eco.pigNegativeFloor ?? -25}">
           </div>
         </div>
 
         <div class="row">
           <div class="field">
-            <label><input type="checkbox" id="ecoPigNeg" ${eco.pigAllowNegative ? 'checked' : ''}> Permitir PIG Negativo</label>
+            <label><input type="checkbox" id="ecoPigNeg" ${eco.pigAllowNegative !== false ? 'checked' : ''}> Permitir PIG Negativo</label>
           </div>
           <div class="field">
             <label>Penalización por tiro fallado</label>
-            <input class="input" type="number" step="0.1" id="ecoMissPenalty" value="${eco.missedShotsPenalty}">
+            <input class="input" type="number" step="0.1" id="ecoMissPenalty" value="${eco.missedShotsPenalty ?? 0.5}">
           </div>
         </div>
 
@@ -1142,16 +1142,16 @@ function renderEconomyTab(db){
       <div class="grid grid-2">
         <div>
           <h4 style="font-size:11px;color:var(--accent);letter-spacing:.1em;margin-bottom:10px">VICTORIAS</h4>
-          <div class="field"><label>Victoria Simple (✅)</label><input class="input" type="number" id="ecoWinSimple" value="${eco.bonuses.winSimple.amount}"></div>
-          <div class="field"><label>Victoria Complicada (⚔️)</label><input class="input" type="number" id="ecoWinHard" value="${eco.bonuses.winHard.amount}"></div>
-          <div class="field"><label>Victoria Humillante (😂)</label><input class="input" type="number" id="ecoWinHum" value="${eco.bonuses.winHumiliating.amount}"></div>
+          <div class="field"><label>Victoria Simple (✅)</label><input class="input" type="number" id="ecoWinSimple" value="${eco.bonuses?.winSimple?.amount ?? 5000}"></div>
+          <div class="field"><label>Victoria Complicada (⚔️)</label><input class="input" type="number" id="ecoWinHard" value="${eco.bonuses?.winHard?.amount ?? 8000}"></div>
+          <div class="field"><label>Victoria Humillante (😂)</label><input class="input" type="number" id="ecoWinHum" value="${eco.bonuses?.winHumiliating?.amount ?? 12000}"></div>
         </div>
         <div>
           <h4 style="font-size:11px;color:var(--accent);letter-spacing:.1em;margin-bottom:10px">TEMPORADA</h4>
-          <div class="field"><label>Clasificar a Playoffs</label><input class="input" type="number" id="ecoQualify" value="${eco.bonuses.qualifyPlayoffs.amount}"></div>
-          <div class="field"><label>Pasar de Ronda</label><input class="input" type="number" id="ecoPassRound" value="${eco.bonuses.passRound.amount}"></div>
-          <div class="field"><label>Ganar la Liga</label><input class="input" type="number" id="ecoWinLeague" value="${eco.bonuses.winLeague.amount}"></div>
-          <div class="field"><label>Ascenso de División</label><input class="input" type="number" id="ecoPromote" value="${eco.bonuses.promote.amount}"></div>
+          <div class="field"><label>Clasificar a Playoffs</label><input class="input" type="number" id="ecoQualify" value="${eco.bonuses?.qualifyPlayoffs?.amount ?? 15000}"></div>
+          <div class="field"><label>Pasar de Ronda</label><input class="input" type="number" id="ecoPassRound" value="${eco.bonuses?.passRound?.amount ?? 10000}"></div>
+          <div class="field"><label>Ganar la Liga</label><input class="input" type="number" id="ecoWinLeague" value="${eco.bonuses?.winLeague?.amount ?? 50000}"></div>
+          <div class="field"><label>Ascenso de División</label><input class="input" type="number" id="ecoPromote" value="${eco.bonuses?.promote?.amount ?? 30000}"></div>
         </div>
       </div>
     </div>
@@ -1165,9 +1165,9 @@ function renderEconomyTab(db){
         ${['BO3','BO5','BO7'].map(bo => `
           <div style="background:var(--bg-elev);border:1px solid var(--border-soft);padding:12px;border-radius:8px">
             <h5 style="font-size:12px;font-weight:700;color:var(--gold);margin-bottom:10px">${bo}</h5>
-            <div class="field"><label>Margen Simple</label><input class="input" type="number" id="thr${bo}_simple" value="${eco.bonuses.thresholds?.[bo]?.simpleMargin ?? 2}"></div>
-            <div class="field"><label>Dif. Goles Humillante</label><input class="input" type="number" id="thr${bo}_goal" value="${eco.bonuses.thresholds?.[bo]?.humiliatingGoalDiff ?? 4}"></div>
-            <div class="field"><label>Shutouts Humillante</label><input class="input" type="number" id="thr${bo}_shutout" value="${eco.bonuses.thresholds?.[bo]?.humiliatingShutout ?? 2}"></div>
+            <div class="field"><label>Margen Simple</label><input class="input" type="number" id="thr${bo}_simple" value="${eco.bonuses?.thresholds?.[bo]?.simpleMargin ?? 2}"></div>
+            <div class="field"><label>Dif. Goles Humillante</label><input class="input" type="number" id="thr${bo}_goal" value="${eco.bonuses?.thresholds?.[bo]?.humiliatingGoalDiff ?? 4}"></div>
+            <div class="field"><label>Shutouts Humillante</label><input class="input" type="number" id="thr${bo}_shutout" value="${eco.bonuses?.thresholds?.[bo]?.humiliatingShutout ?? 2}"></div>
           </div>
         `).join('')}
       </div>
@@ -1255,40 +1255,40 @@ function bindEconomyTab(){
   document.getElementById('saveEconomyBtn')?.addEventListener('click', () => {
     try {
       const eco = {
-        enabled: document.getElementById('ecoEnabled').checked,
-        allowDebt: document.getElementById('ecoAllowDebt').checked,
-        pigMultiplier: +document.getElementById('ecoPigMult').value || 0,
-        pigAllowNegative: document.getElementById('ecoPigNeg').checked,
-        pigNegativeFloor: +document.getElementById('ecoPigFloor').value || 0,
-        missedShotsPenalty: +document.getElementById('ecoMissPenalty').value || 0,
+        enabled: document.getElementById('ecoEnabled')?.checked ?? true,
+        allowDebt: document.getElementById('ecoAllowDebt')?.checked ?? true,
+        pigMultiplier: +document.getElementById('ecoPigMult')?.value || 1000,
+        pigAllowNegative: document.getElementById('ecoPigNeg')?.checked ?? true,
+        pigNegativeFloor: +document.getElementById('ecoPigFloor')?.value || -25,
+        missedShotsPenalty: +document.getElementById('ecoMissPenalty')?.value || 0.5,
         basePriceByRank: {},
         tiers: {
-          top: +document.getElementById('ecoTopTier').value || 3,
-          low: +document.getElementById('ecoLowTier').value || 7
+          top: +document.getElementById('ecoTopTier')?.value || 3,
+          low: +document.getElementById('ecoLowTier')?.value || 7
         },
         bonuses: {
-          winSimple: { amount: +document.getElementById('ecoWinSimple').value || 0, label: 'Victoria simple' },
-          winHard: { amount: +document.getElementById('ecoWinHard').value || 0, label: 'Victoria complicada' },
-          winHumiliating: { amount: +document.getElementById('ecoWinHum').value || 0, label: 'Victoria humillante' },
-          qualifyPlayoffs: { amount: +document.getElementById('ecoQualify').value || 0, label: 'Clasificar a Play-Offs' },
-          passRound: { amount: +document.getElementById('ecoPassRound').value || 0, label: 'Pasar de ronda (Playoffs)' },
-          winLeague: { amount: +document.getElementById('ecoWinLeague').value || 0, label: 'Ganar la liga' },
-          promote: { amount: +document.getElementById('ecoPromote').value || 0, label: 'Ascenso de división' },
+          winSimple: { amount: +document.getElementById('ecoWinSimple')?.value || 0, label: 'Victoria simple' },
+          winHard: { amount: +document.getElementById('ecoWinHard')?.value || 0, label: 'Victoria complicada' },
+          winHumiliating: { amount: +document.getElementById('ecoWinHum')?.value || 0, label: 'Victoria humillante' },
+          qualifyPlayoffs: { amount: +document.getElementById('ecoQualify')?.value || 0, label: 'Clasificar a Play-Offs' },
+          passRound: { amount: +document.getElementById('ecoPassRound')?.value || 0, label: 'Pasar de ronda (Playoffs)' },
+          winLeague: { amount: +document.getElementById('ecoWinLeague')?.value || 0, label: 'Ganar la liga' },
+          promote: { amount: +document.getElementById('ecoPromote')?.value || 0, label: 'Ascenso de división' },
           thresholds: {
             BO3: {
-              simpleMargin: +document.getElementById('thrBO3_simple').value || 0,
-              humiliatingGoalDiff: +document.getElementById('thrBO3_goal').value || 0,
-              humiliatingShutout: +document.getElementById('thrBO3_shutout').value || 0
+              simpleMargin: +document.getElementById('thrBO3_simple')?.value || 0,
+              humiliatingGoalDiff: +document.getElementById('thrBO3_goal')?.value || 0,
+              humiliatingShutout: +document.getElementById('thrBO3_shutout')?.value || 0
             },
             BO5: {
-              simpleMargin: +document.getElementById('thrBO5_simple').value || 0,
-              humiliatingGoalDiff: +document.getElementById('thrBO5_goal').value || 0,
-              humiliatingShutout: +document.getElementById('thrBO5_shutout').value || 0
+              simpleMargin: +document.getElementById('thrBO5_simple')?.value || 0,
+              humiliatingGoalDiff: +document.getElementById('thrBO5_goal')?.value || 0,
+              humiliatingShutout: +document.getElementById('thrBO5_shutout')?.value || 0
             },
             BO7: {
-              simpleMargin: +document.getElementById('thrBO7_simple').value || 0,
-              humiliatingGoalDiff: +document.getElementById('thrBO7_goal').value || 0,
-              humiliatingShutout: +document.getElementById('thrBO7_shutout').value || 0
+              simpleMargin: +document.getElementById('thrBO7_simple')?.value || 0,
+              humiliatingGoalDiff: +document.getElementById('thrBO7_goal')?.value || 0,
+              humiliatingShutout: +document.getElementById('thrBO7_shutout')?.value || 0
             }
           }
         },
@@ -1347,10 +1347,10 @@ function bindEconomyTab(){
   });
 
   document.getElementById('applySanctionBtn')?.addEventListener('click', () => {
-    const teamId = document.getElementById('sanctionTeam').value;
-    const amount = +document.getElementById('sanctionAmount').value || 0;
-    const reasonId = document.getElementById('sanctionReason').value;
-    const detail = document.getElementById('sanctionDetail').value.trim();
+    const teamId = document.getElementById('sanctionTeam')?.value;
+    const amount = +document.getElementById('sanctionAmount')?.value || 0;
+    const reasonId = document.getElementById('sanctionReason')?.value;
+    const detail = document.getElementById('sanctionDetail')?.value.trim();
 
     if (!teamId) return toast('Selecciona un equipo', 'error');
     if (amount <= 0) return toast('El monto debe ser mayor a 0', 'error');
@@ -2564,9 +2564,6 @@ const AITournamentWizard = {
     }
   },
 
-  // ============================================================
-  // PASO 1: ENTRADA
-  // ============================================================
   renderStep1(content, footer) {
     const div = getDB().divisions.find(d => d.id === this.state.targetDivisionId);
     
@@ -2761,9 +2758,6 @@ const AITournamentWizard = {
     }
   },
 
-  // ============================================================
-  // PASO 2: PREVIEW EQUIPOS
-  // ============================================================
   renderStep2(content, footer) {
     const teams = this.state.teams;
     if (teams.length === 0) {
@@ -2874,9 +2868,6 @@ const AITournamentWizard = {
     });
   },
 
-  // ============================================================
-  // PASO 3: ESCUDOS
-  // ============================================================
   renderStep3(content, footer) {
     const teams = this.state.teams;
     const logos = this.state.logosPool;
@@ -3042,9 +3033,6 @@ const AITournamentWizard = {
     });
   },
 
-  // ============================================================
-  // PASO 4: CONFIRMAR
-  // ============================================================
   renderStep4(content, footer) {
     const teams = this.state.teams;
     const total = teams.length;
@@ -3149,9 +3137,6 @@ const AITournamentWizard = {
     });
   },
 
-  // ============================================================
-  // PASO 5: CLASIFICACIÓN
-  // ============================================================
   renderStep5(content, footer) {
     const divId = this.state.targetDivisionId;
     const db = getDB();
