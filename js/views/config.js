@@ -16,6 +16,7 @@ import { getSupabase, testConnection, downloadAll } from '../services/supabase.j
 import { login, logout, getCurrentUser } from '../services/auth.js';
 import { forcePush, forcePull, getSyncState } from '../services/sync.js';
 import { applyTheme, DEFAULT_THEME, exportTheme, importTheme, themePreviewBg } from '../services/theme.js';
+import { exportLedgerTXT, applySanction } from '../services/economy.js'; // NUEVO
 
 let configTab = 'general';
 let _authUser = null;
@@ -1058,6 +1059,7 @@ function bindGradientStops(){
 function renderEconomyTab(db){
   const eco = db.config.economy || ECONOMY_DEFAULTS;
   const RANKS = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Champion', 'Grand Champion', 'SSL'];
+  const ledger = db.economyLedger || [];
 
   return `
     <div class="grid grid-2">
@@ -1163,6 +1165,78 @@ function renderEconomyTab(db){
       </div>
     </div>
 
+    <!-- NUEVO: APLICAR SANCIÓN Y HOJA CONTABLE -->
+    <div class="card" style="margin-top:18px;border-left:4px solid var(--danger)">
+      <div class="card-header"><div class="card-title" style="color:var(--danger)"><span class="dot" style="color:var(--danger)">◆</span>APLICAR SANCIÓN ECONÓMICA</div></div>
+      <div class="row">
+        <div class="field">
+          <label>Equipo</label>
+          <select class="select" id="sanctionTeam">
+            <option value="">— Seleccionar —</option>
+            ${db.teams.map(t => `<option value="${t.id}">${esc(t.name)} (Saldo: $${(t.money || 0).toLocaleString()})</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label>Monto a descontar ($)</label>
+          <input class="input" type="number" id="sanctionAmount" value="5000">
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>Motivo</label>
+          <select class="select" id="sanctionReason">
+            ${(eco.sanctions?.reasons || []).map(r => `<option value="${r.id}">${esc(r.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label>Detalle adicional (opcional)</label>
+          <input class="input" id="sanctionDetail" placeholder="Ej: Partido vs Tigres">
+        </div>
+      </div>
+      <button class="btn btn-danger" id="applySanctionBtn" style="margin-top:10px">💸 APLICAR SANCIÓN</button>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <div class="card-header">
+        <div class="card-title"><span class="dot">◆</span>HOJA CONTABLE (ÚLTIMOS MOVIMIENTOS)</div>
+        <button class="btn btn-sm" id="exportLedgerBtn">⬇ EXPORTAR TXT</button>
+      </div>
+      <div class="table-wrap" style="max-height:400px;overflow-y:auto">
+        <table class="ztable">
+          <thead>
+            <tr>
+              <th>FECHA</th>
+              <th>EQUIPO</th>
+              <th>TIPO</th>
+              <th>MOTIVO</th>
+              <th class="num">MONTO</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ledger.slice(0, 50).map(item => {
+              const date = new Date(item.ts).toLocaleString();
+              const isPositive = item.amount >= 0;
+              const typeLabels = {
+                transfer: 'Fichaje', free: 'Libre', bonus_win: 'Bonus Victoria',
+                bonus_season: 'Bonus Temporada', sanction: 'Sanción', manual_adjust: 'Ajuste Manual'
+              };
+              return `
+                <tr>
+                  <td style="font-size:11px;color:var(--muted)">${date}</td>
+                  <td>${esc(item.teamName)}</td>
+                  <td><span class="badge" style="font-size:10px">${typeLabels[item.type] || item.type}</span></td>
+                  <td style="font-size:12px">${esc(item.reason)}</td>
+                  <td class="num" style="font-weight:600;color:${isPositive ? 'var(--success)' : 'var(--danger)'}">
+                    ${isPositive ? '+' : ''}$${Math.abs(item.amount).toLocaleString()}
+                  </td>
+                </tr>
+              `;
+            }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">Sin movimientos registrados</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <div style="margin-top:20px">
       <button class="btn btn-primary" id="saveEconomyBtn">💾 GUARDAR CONFIGURACIÓN DE ECONOMÍA</button>
     </div>
@@ -1244,6 +1318,33 @@ function bindEconomyTab(){
       console.error('[ECONOMY SAVE ERROR]', e);
       toast('Error al guardar economía: ' + e.message, 'error');
     }
+  });
+
+  // NUEVO: Evento para aplicar sanción
+  document.getElementById('applySanctionBtn')?.addEventListener('click', () => {
+    const teamId = document.getElementById('sanctionTeam').value;
+    const amount = +document.getElementById('sanctionAmount').value || 0;
+    const reasonId = document.getElementById('sanctionReason').value;
+    const detail = document.getElementById('sanctionDetail').value.trim();
+
+    if (!teamId) return toast('Selecciona un equipo', 'error');
+    if (amount <= 0) return toast('El monto debe ser mayor a 0', 'error');
+
+    if (!confirm('¿Aplicar esta sanción al equipo?')) return;
+
+    try {
+      applySanction({ teamId, amount, reasonId, customReason: detail });
+      toast(`Sanción de $${amount} aplicada correctamente`, 'success');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  });
+
+  // NUEVO: Evento para exportar contabilidad
+  document.getElementById('exportLedgerBtn')?.addEventListener('click', () => {
+    exportLedgerTXT();
+    toast('Hoja contable exportada', 'success');
   });
 }
 
