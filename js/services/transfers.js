@@ -4,7 +4,7 @@
 import { getDB, mutate } from './storage.js';
 import { uid } from '../data/database.js';
 import { openModal, closeTopModal, closeAllModals, toast } from './ui.js';
-import { calculatePlayerPrice } from './economy.js';
+import { calculatePlayerPrice, recordTransaction } from './economy.js';
 import { aggregatePlayerStats } from './statistics.js';
 
 // ---------- HELPERS ----------
@@ -60,18 +60,13 @@ export function doFreeAgent(playerId){
       if(!pl) return;
       const ft = fromTeam ? d.teams.find(t => t.id === fromTeam.id) : null;
 
-      // Snapshot si tiene stats
       const s = pl.seasonStats || {};
       const hasStats = (s.goals || 0) + (s.assists || 0) + (s.saves || 0) + (s.shots || 0) > 0;
       if (hasStats && ft){
         pl.careerSnapshots.push({
-          teamId: ft.id,
-          teamName: ft.name,
-          divisionId: ft.divisionId || null,
+          teamId: ft.id, teamName: ft.name, divisionId: ft.divisionId || null,
           divisionName: d.divisions.find(x => x.id === ft.divisionId)?.name || '—',
-          stats: JSON.parse(JSON.stringify(s)),
-          date: Date.now(),
-          reason: 'free'
+          stats: JSON.parse(JSON.stringify(s)), date: Date.now(), reason: 'free'
         });
       }
 
@@ -81,18 +76,11 @@ export function doFreeAgent(playerId){
       pl.pendingTeamId = null;
 
       d.transferLog.push({
-        id: uid('mov'),
-        playerId,
-        playerName: pl.name,
-        fromTeamId: ft?.id || null,
-        fromTeamName: ft?.name || '—',
-        toTeamId: null,
-        toTeamName: 'Agente Libre',
-        fromDivisionId: ft?.divisionId || null,
-        toDivisionId: null,
-        date: Date.now(),
-        type: 'free',
-        price: 0 // NUEVO
+        id: uid('mov'), playerId, playerName: pl.name,
+        fromTeamId: ft?.id || null, fromTeamName: ft?.name || '—',
+        toTeamId: null, toTeamName: 'Agente Libre',
+        fromDivisionId: ft?.divisionId || null, toDivisionId: null,
+        date: Date.now(), type: 'free', price: 0
       });
     });
 
@@ -105,19 +93,17 @@ export function doFreeAgent(playerId){
   }
 }
 
-export function doTransferPlayer(playerId, targetTeamId, forceReset){
+export function doTransferPlayer(playerId, targetTeamId, forceReset, customPrice = null){
   try {
     const db = getDB();
     const player = db.players.find(p => p.id === playerId);
     const targetTeam = db.teams.find(t => t.id === targetTeamId);
     if (!player || !targetTeam) return toast('Datos inválidos', 'error');
 
-    // 1. Calcular precio
     const stats = aggregatePlayerStats().find(s => s.id === playerId);
     const priceData = calculatePlayerPrice(player, stats, db.config.economy);
-    const price = priceData.price;
+    const price = customPrice !== null ? customPrice : priceData.price;
 
-    // 2. Validar fondos (si no se permiten deudas)
     if (!db.config.economy.allowDebt && (targetTeam.money || 0) < price) {
       return toast(`Fondos insuficientes. Requiere $${price.toLocaleString()}, tiene $${(targetTeam.money||0).toLocaleString()}`, 'error');
     }
@@ -139,13 +125,9 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset){
       if (shouldReset){
         const s = pl.seasonStats || {};
         pl.careerSnapshots.push({
-          teamId: ft?.id || null,
-          teamName: ft?.name || 'Agente Libre',
-          divisionId: fromDivId,
-          divisionName: d.divisions.find(x => x.id === fromDivId)?.name || '—',
-          stats: JSON.parse(JSON.stringify(s)),
-          date: Date.now(),
-          reason: 'transfer'
+          teamId: ft?.id || null, teamName: ft?.name || 'Agente Libre',
+          divisionId: fromDivId, divisionName: d.divisions.find(x => x.id === fromDivId)?.name || '—',
+          stats: JSON.parse(JSON.stringify(s)), date: Date.now(), reason: 'transfer'
         });
         pl.seasonStats = { goals:0, assists:0, saves:0, shots:0, pig:0, matchesPlayed:0, mvps:0, pigHistory:[], avgLast5PIG:0, avgPIGPerMatch:0 };
         pl.pigHistory = [];
@@ -182,20 +164,12 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset){
         });
       }
 
-      // Registrar en TransferLog
       d.transferLog.push({
-        id: uid('mov'),
-        playerId,
-        playerName: pl.name,
-        fromTeamId: ft?.id || null,
-        fromTeamName: ft?.name || 'Agente Libre',
-        toTeamId: targetTeamId,
-        toTeamName: tt.name,
-        fromDivisionId: fromDivId,
-        toDivisionId: targetTeam.divisionId,
-        date: Date.now(),
-        type: goesPending ? 'pending' : 'transfer',
-        price: price // NUEVO
+        id: uid('mov'), playerId, playerName: pl.name,
+        fromTeamId: ft?.id || null, fromTeamName: ft?.name || 'Agente Libre',
+        toTeamId: targetTeamId, toTeamName: tt.name,
+        fromDivisionId: fromDivId, toDivisionId: targetTeam.divisionId,
+        date: Date.now(), type: goesPending ? 'pending' : 'transfer', price: price
       });
     });
 
@@ -215,6 +189,9 @@ export function openTransferModal(playerId){
   if (!player) return toast('Jugador no encontrado', 'error');
   const currentTeam = getPlayerCurrentTeam(playerId);
 
+  const stats = aggregatePlayerStats().find(s => s.id === playerId);
+  const defaultPrice = calculatePlayerPrice(player, stats, db.config.economy).price;
+
   const divisionsSorted = [...db.divisions].sort((a, b) => (a.tier || 0) - (b.tier || 0));
   const groupsHTML = divisionsSorted.map(div => {
     const teams = db.teams.filter(t => t.divisionId === div.id && t.id !== currentTeam?.id);
@@ -227,12 +204,12 @@ export function openTransferModal(playerId){
         const full = count >= max;
         return `
           <div class="transfer-team-option ${full ? 'disabled' : ''}"
-               data-target="${t.id}" data-division="${div.id}" data-full="${full ? '1' : '0'}">
+               data-target="${t.id}" data-division="${div.id}" data-full="${full ? '1' : '0'}" data-money="${t.money || 0}">
             <div class="info">
               ${t.logo ? `<img src="${t.logo}" alt="">` : ''}
               <span class="name">${esc(t.name)}</span>
             </div>
-            <span class="slots">${count}/${max}${full ? ' · LLENO' : ''}</span>
+            <span class="slots">${count}/${max}${full ? ' · LLENO' : ''} | $${(t.money||0).toLocaleString()}</span>
           </div>`;
       }).join('')}
     `;
@@ -243,29 +220,40 @@ export function openTransferModal(playerId){
     title: `TRANSFERIR · ${esc(player.name)}`,
     wide: true,
     body: `
-      <div style="margin-bottom:14px;color:var(--muted);font-size:12px">
-        Equipo actual: <strong style="color:var(--silver-light)">${esc(currentTeam?.name || 'Agente Libre')}</strong>
+      <div style="margin-bottom:14px;color:var(--muted);font-size:12px;display:flex;justify-content:space-between">
+        <span>Equipo actual: <strong style="color:var(--silver-light)">${esc(currentTeam?.name || 'Agente Libre')}</strong></span>
+        <span>Precio sugerido: <strong style="color:var(--gold)">$${defaultPrice.toLocaleString()}</strong></span>
       </div>
+      
+      <div class="row" style="margin-bottom:14px">
+        <div class="field" style="margin:0">
+          <label>Monto del fichaje ($)</label>
+          <input class="input" type="number" id="transfer-custom-price" value="${defaultPrice}">
+        </div>
+        <div class="field" style="margin:0">
+          <label>Resetear stats al cambiar de división</label>
+          <label style="display:flex;align-items:center;gap:8px;height:38px">
+            <input type="checkbox" id="transfer-reset-stats"> Sí, resetear
+          </label>
+        </div>
+      </div>
+
       <div class="field">
         <label>Destino</label>
-        <div id="transfer-list" style="max-height:320px;overflow-y:auto;border:1px solid var(--border-soft);border-radius:8px;padding:6px;background:var(--bg-graphite)">
+        <div id="transfer-list" style="max-height:280px;overflow-y:auto;border:1px solid var(--border-soft);border-radius:8px;padding:6px;background:var(--bg-graphite)">
           ${groupsHTML || '<div style="padding:20px;text-align:center;color:var(--muted)">No hay otros equipos disponibles</div>'}
         </div>
       </div>
-      <div class="field">
-        <label><input type="checkbox" id="transfer-reset-stats"> Resetear stats al cambiar de división</label>
-        <small class="field-hint">Se guardará un snapshot en el historial de carrera del jugador.</small>
-      </div>
       <input type="hidden" id="transfer-target-team" value="">
-      <input type="hidden" id="transfer-target-div" value="">
     `,
     footer: `
       <button class="btn btn-ghost" data-close>CANCELAR</button>
-      <button class="btn btn-primary" id="do-transfer" disabled>CONFIRMAR</button>
+      <button class="btn btn-primary" id="do-transfer" disabled>CONFIRMAR FICHAJE</button>
     `,
     onMount: root => {
       const list = root.querySelector('#transfer-list');
       const tt = root.querySelector('#transfer-target-team');
+      const priceInp = root.querySelector('#transfer-custom-price');
       const btn = root.querySelector('#do-transfer');
 
       list.querySelectorAll('[data-target]').forEach(opt => {
@@ -278,8 +266,25 @@ export function openTransferModal(playerId){
         });
       });
 
+      priceInp.addEventListener('input', () => {
+        const val = +priceInp.value;
+        if (tt.value) {
+          const selectedOpt = list.querySelector(`[data-target="${tt.value}"]`);
+          if (selectedOpt) {
+            const teamMoney = +selectedOpt.dataset.money;
+            if (!db.config.economy.allowDebt && teamMoney < val) {
+              btn.textContent = 'FONDOS INSUFICIENTES';
+              btn.disabled = true;
+            } else {
+              btn.textContent = 'CONFIRMAR FICHAJE';
+              btn.disabled = false;
+            }
+          }
+        }
+      });
+
       btn.addEventListener('click', () => {
-        doTransferPlayer(playerId, tt.value, root.querySelector('#transfer-reset-stats').checked);
+        doTransferPlayer(playerId, tt.value, root.querySelector('#transfer-reset-stats').checked, +priceInp.value);
       });
     }
   });
@@ -322,7 +327,6 @@ export function openRowActions(playerId){
   });
 }
 
-// ---------- UTIL ----------
 function esc(str){
   return String(str ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
 }
