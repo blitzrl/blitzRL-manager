@@ -2,12 +2,17 @@ import { aggregatePlayerStats } from '../services/statistics.js';
 import { getDB } from '../services/storage.js';
 import { state } from '../state.js';
 import { getNationFlag, getRankColor } from '../data/nations.js';
+import { calculateTrend } from '../services/pig.js';
 
 export function ballonDorView(){
   const db = getDB();
   const activeDivisionId = state.divisionId;
   const stats = aggregatePlayerStats({ divisionId: activeDivisionId })
     .filter(p => p.games > 0)
+    .map(p => {
+      const player = db.players.find(x => x.id === p.id);
+      return { ...p, pigTrend: calculateTrend(player) };
+    })
     .sort((a,b) => b.pig - a.pig);
 
   const top3 = stats.slice(0,3);
