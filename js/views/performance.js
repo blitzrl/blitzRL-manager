@@ -1,15 +1,13 @@
 // ============================================================
-// PERFORMANCE VIEW — Gráficas de rendimiento y economía
+// PERFORMANCE VIEW (Gestor)
 // ============================================================
 import { getDB } from '../services/storage.js';
 import { state } from '../state.js';
 import { getPlayerTimeline, getTeamTimeline } from '../services/statistics.js';
 
-let _activeTab = 'players'; // 'players' | 'teams'
+let _activeTab = 'players';
 let _selectedPlayerId = null;
 let _selectedTeamId = null;
-
-// Referencias a las instancias de Chart.js para poder destruirlas al re-renderizar
 let _chartStatsInstance = null;
 let _chartEconomyInstance = null;
 
@@ -32,190 +30,121 @@ export function performanceView(){
         <button class="stats-tab ${_activeTab === 'teams' ? 'active' : ''}" data-perf-tab="teams">🛡 Equipos</button>
       </div>
     </div>
-
     <div class="card" style="margin-bottom:20px">
       <div class="row">
         ${_activeTab === 'players' ? `
-          <div class="field">
-            <label>Seleccionar Jugador</label>
+          <div class="field"><label>Jugador</label>
             <select class="select" id="perf-player-select">
               ${players.map(p => `<option value="${p.id}" ${p.id === _selectedPlayerId ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
             </select>
           </div>
         ` : `
-          <div class="field">
-            <label>Seleccionar Equipo</label>
+          <div class="field"><label>Equipo</label>
             <select class="select" id="perf-team-select">
               ${teams.map(t => `<option value="${t.id}" ${t.id === _selectedTeamId ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
             </select>
           </div>
         `}
-        <div class="field">
-          <label>Temporada</label>
-          <select class="select" disabled>
-            <option>${season?.name || 'Actual'}</option>
-          </select>
-        </div>
+        <div class="field"><label>Temporada</label><select class="select" disabled><option>${season?.name || 'Actual'}</option></select></div>
       </div>
     </div>
-
     <div class="grid grid-2">
-      <!-- Gráfica de Stats por Jornada -->
       <div class="card" style="min-height: 400px; display: flex; flex-direction: column;">
-        <div class="card-header">
-          <div class="card-title"><span class="dot">◆</span>RENDIMIENTO POR JORNADA</div>
-        </div>
-        <div style="flex:1; position:relative; min-height:300px;">
-          <canvas id="perfStatsChart"></canvas>
-        </div>
+        <div class="card-header"><div class="card-title"><span class="dot">◆</span>RENDIMIENTO POR JORNADA</div></div>
+        <div style="flex:1; position:relative; min-height:300px;"><canvas id="perfStatsChart"></canvas></div>
       </div>
-
-      <!-- Gráfica de Evolución de Precio -->
       <div class="card" style="min-height: 400px; display: flex; flex-direction: column;">
-        <div class="card-header">
-          <div class="card-title"><span class="dot">◆</span>EVOLUCIÓN DE PRECIO</div>
-        </div>
-        <div style="flex:1; position:relative; min-height:300px;">
-          <canvas id="perfEconomyChart"></canvas>
-        </div>
+        <div class="card-header"><div class="card-title"><span class="dot">◆</span>EVOLUCIÓN DE PRECIO</div></div>
+        <div style="flex:1; position:relative; min-height:300px;"><canvas id="perfEconomyChart"></canvas></div>
       </div>
     </div>
   `;
 }
 
 export function bindPerformanceEvents(){
-  // Destruir instancias previas si existen
+  // DESTRUIR GRÁFICAS ANTERIORES (Evita el error de Canvas in use)
   if (_chartStatsInstance) { _chartStatsInstance.destroy(); _chartStatsInstance = null; }
   if (_chartEconomyInstance) { _chartEconomyInstance.destroy(); _chartEconomyInstance = null; }
 
-  const tabs = document.querySelectorAll('[data-perf-tab]');
-  tabs.forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('[data-perf-tab]').forEach(t => t.addEventListener('click', () => {
     _activeTab = t.dataset.perfTab;
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   }));
 
-  const playerSelect = document.getElementById('perf-player-select');
-  if (playerSelect) playerSelect.addEventListener('change', (e) => {
+  document.getElementById('perf-player-select')?.addEventListener('change', (e) => {
     _selectedPlayerId = e.target.value;
-    renderCharts();
+    updateChartsData();
   });
 
-  const teamSelect = document.getElementById('perf-team-select');
-  if (teamSelect) teamSelect.addEventListener('change', (e) => {
+  document.getElementById('perf-team-select')?.addEventListener('change', (e) => {
     _selectedTeamId = e.target.value;
-    renderCharts();
+    updateChartsData();
   });
 
   renderCharts();
 }
 
 function renderCharts() {
-  const db = getDB();
-  const season = db.seasons.find(s => s.active) || db.seasons[0];
+  if (typeof Chart === 'undefined') return;
   
+  Chart.defaults.color = '#8D929A';
+  Chart.defaults.borderColor = '#25272B';
+
   const ctxStats = document.getElementById('perfStatsChart');
   const ctxEco = document.getElementById('perfEconomyChart');
   if (!ctxStats || !ctxEco) return;
 
-  // Chart.js Global Defaults para tema oscuro
-  Chart.defaults.color = '#8D929A';
-  Chart.defaults.borderColor = '#25272B';
+  // Crear instancias vacías primero
+  _chartStatsInstance = new Chart(ctxStats, { type: 'line', data: { labels: [], datasets: [] } });
+  _chartEconomyInstance = new Chart(ctxEco, { type: 'line', data: { labels: [], datasets: [] } });
+  
+  updateChartsData();
+}
+
+function updateChartsData() {
+  if (!_chartStatsInstance || !_chartEconomyInstance) return;
+
+  const db = getDB();
+  const season = db.seasons.find(s => s.active) || db.seasons[0];
 
   if (_activeTab === 'players') {
     const player = db.players.find(p => p.id === _selectedPlayerId);
     if (!player) return;
 
-    // 1. TIMELINE STATS
     const timeline = getPlayerTimeline(player.id, { seasonId: season?.id, divisionId: state.divisionId });
-    const labels = timeline.map(t => `J${t.matchday}`);
-    const goalsData = timeline.map(t => t.goals);
-    const assistsData = timeline.map(t => t.assists);
+    _chartStatsInstance.data.labels = timeline.map(t => `J${t.matchday}`);
+    _chartStatsInstance.data.datasets = [
+      { label: 'Goles', data: timeline.map(t => t.goals), borderColor: '#E6C476', backgroundColor: 'rgba(230,196,118,0.1)', tension: 0.3, fill: true },
+      { label: 'Asistencias', data: timeline.map(t => t.assists), borderColor: '#6FA8FF', backgroundColor: 'rgba(111,168,255,0.1)', tension: 0.3, fill: true }
+    ];
 
-    _chartStatsInstance = new Chart(ctxStats, {
-      type: 'line',
-      data: {
-        labels: labels.length ? labels : ['Sin Datos'],
-        datasets: [
-          { label: 'Goles', data: goalsData.length ? goalsData : [0], borderColor: '#E6C476', backgroundColor: 'rgba(230,196,118,0.1)', tension: 0.3, fill: true },
-          { label: 'Asistencias', data: assistsData.length ? assistsData : [0], borderColor: '#6FA8FF', backgroundColor: 'rgba(111,168,255,0.1)', tension: 0.3, fill: true }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: '#C7CBD1' } } },
-        scales: {
-          x: { grid: { color: '#1C1E22' } },
-          y: { grid: { color: '#1C1E22' }, beginAtZero: true }
-        }
-      }
-    });
-
-    // 2. EVOLUCIÓN PRECIO
     const history = player.priceHistory || [];
-    const seasonLabels = history.map(h => h.seasonName);
-    const priceData = history.map(h => h.price);
-
     // Si no hay historial, mostramos al menos el precio actual
-    if (seasonLabels.length === 0) {
-      seasonLabels.push(season?.name || 'Actual');
-      priceData.push(0); // Temporal hasta que termine la temporada
+    if (history.length === 0) {
+      _chartEconomyInstance.data.labels = [season?.name || 'Actual'];
+      _chartEconomyInstance.data.datasets = [{
+        label: 'Valor de Mercado ($)', data: [player.currentPrice || 0], borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.3, fill: true
+      }];
+    } else {
+      _chartEconomyInstance.data.labels = history.map(h => h.seasonName);
+      _chartEconomyInstance.data.datasets = [{
+        label: 'Valor de Mercado ($)', data: history.map(h => h.price), borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.3, fill: true
+      }];
     }
-
-    _chartEconomyInstance = new Chart(ctxEco, {
-      type: 'line',
-      data: {
-        labels: seasonLabels,
-        datasets: [
-          { label: 'Valor de Mercado ($)', data: priceData, borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.3, fill: true }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: '#C7CBD1' } } },
-        scales: {
-          x: { grid: { color: '#1C1E22' } },
-          y: { grid: { color: '#1C1E22' }, beginAtZero: true, ticks: { callback: value => '$' + value.toLocaleString() } }
-        }
-      }
-    });
-
   } else {
-    // TEAMS
     const team = db.teams.find(t => t.id === _selectedTeamId);
     if (!team) return;
 
     const timeline = getTeamTimeline(team.id, { seasonId: season?.id, divisionId: state.divisionId });
-    const labels = timeline.map(t => `J${t.matchday}`);
-    const goalsData = timeline.map(t => t.goals);
-    const assistsData = timeline.map(t => t.assists);
+    _chartStatsInstance.data.labels = timeline.map(t => `J${t.matchday}`);
+    _chartStatsInstance.data.datasets = [
+      { label: 'Goles', data: timeline.map(t => t.goals), borderColor: '#E6C476', backgroundColor: 'rgba(230,196,118,0.1)', tension: 0.3, fill: true },
+      { label: 'Asistencias', data: timeline.map(t => t.assists), borderColor: '#6FA8FF', backgroundColor: 'rgba(111,168,255,0.1)', tension: 0.3, fill: true }
+    ];
 
-    _chartStatsInstance = new Chart(ctxStats, {
-      type: 'line',
-      data: {
-        labels: labels.length ? labels : ['Sin Datos'],
-        datasets: [
-          { label: 'Goles Totales', data: goalsData.length ? goalsData : [0], borderColor: '#E6C476', backgroundColor: 'rgba(230,196,118,0.1)', tension: 0.3, fill: true },
-          { label: 'Asistencias Totales', data: assistsData.length ? assistsData : [0], borderColor: '#6FA8FF', backgroundColor: 'rgba(111,168,255,0.1)', tension: 0.3, fill: true }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: '#C7CBD1' } } },
-        scales: {
-          x: { grid: { color: '#1C1E22' } },
-          y: { grid: { color: '#1C1E22' }, beginAtZero: true }
-        }
-      }
-    });
-
-    // Gráfica de Economía de Equipo (Falsa por ahora, basada en la historia del Ledger)
+    // Saldo del equipo
     const ledger = db.economyLedger || [];
     const teamLedger = ledger.filter(l => l.teamId === team.id).sort((a,b) => a.ts - b.ts);
-    
-    // Acumulamos el saldo a lo largo del tiempo
     let currentBal = 0;
     const balData = [];
     const balLabels = [];
@@ -225,27 +154,14 @@ function renderCharts() {
       balLabels.push(new Date(l.ts).toLocaleDateString());
     });
 
-    _chartEconomyInstance = new Chart(ctxEco, {
-      type: 'line',
-      data: {
-        labels: balLabels.length ? balLabels : ['Sin Datos'],
-        datasets: [
-          { label: 'Saldo Acumulado ($)', data: balData.length ? balData : [0], borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.1, fill: true }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: '#C7CBD1' } } },
-        scales: {
-          x: { grid: { color: '#1C1E22' } },
-          y: { grid: { color: '#1C1E22' }, ticks: { callback: value => '$' + value.toLocaleString() } }
-        }
-      }
-    });
+    _chartEconomyInstance.data.labels = balLabels.length ? balLabels : ['Actual'];
+    _chartEconomyInstance.data.datasets = [{
+      label: 'Saldo Acumulado ($)', data: balData.length ? balData : [team.money || 0], borderColor: '#63C28A', backgroundColor: 'rgba(99,194,138,0.1)', tension: 0.1, fill: true
+    }];
   }
+
+  _chartStatsInstance.update();
+  _chartEconomyInstance.update();
 }
 
-function esc(str){
-  return String(str ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
-}
+function esc(str) { return String(str ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
