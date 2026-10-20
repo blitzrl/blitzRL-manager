@@ -31,6 +31,7 @@ function teamCard(t){
   }));
   const trophies = t.trophies || [];
   
+  // Economía
   const squadValue = getTeamSquadValue(t.id);
   const balance = t.money || 0;
   const isDebt = balance < 0;
@@ -68,7 +69,11 @@ function teamCard(t){
           </div>
           <span class="badge ${r.role==='CAPITÁN'?'badge-gold':''}">${r.role}</span>
         </div>`;}).join('')}
-      ${trophies.length > 0 ? `<div class="card-vitrina">${renderVitrina(trophies, { compact: true })}</div>` : ''}
+      ${trophies.length > 0 ? `
+        <div class="card-vitrina">
+          ${renderVitrina(trophies, { compact: true })}
+        </div>
+      ` : ''}
       <div class="card-actions">
         <button class="btn btn-sm" data-edit-team="${t.id}">EDITAR</button>
         <button class="btn btn-sm btn-danger" data-del-team="${t.id}">ELIMINAR</button>
@@ -91,6 +96,7 @@ export function bindTeamsEvents(){
         toast('Equipo eliminado','success');
         window.dispatchEvent(new HashChangeEvent('hashchange'));
       } catch(e) {
+        console.error('[ZENITH] Error eliminando equipo:', e);
         toast('Error al eliminar: ' + e.message, 'error');
       }
     })));
@@ -103,6 +109,9 @@ export function bindTeamsEvents(){
   });
 }
 
+// ============================================================
+// FORMULARIO DE EQUIPO
+// ============================================================
 export function openTeamForm(teamId=null){
   const db = getDB();
   const team = teamId ? db.teams.find(t=>t.id===teamId) : null;
@@ -114,7 +123,7 @@ export function openTeamForm(teamId=null){
     logo: team?.logo || '',
     name: team?.name || '',
     coach: team?.coach || '',
-    money: team?.money || 0,
+    money: team?.money || 0, // NUEVO
     roster: team ? JSON.parse(JSON.stringify(team.roster)) : []
   };
 
@@ -128,7 +137,9 @@ export function openTeamForm(teamId=null){
       <button class="btn btn-primary" id="saveTeam">GUARDAR</button>
     `,
     onMount: (root) => {
-      bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, { close: () => closeTopModal() });
+      bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, {
+        close: () => closeTopModal()
+      });
     }
   });
 }
@@ -138,18 +149,26 @@ function renderTeamFormBody(formState, db){
   return `
     <div class="field">
       <label>Logo</label>
-      <div class="dropzone" id="logoDrop">${formState.logo ? `<img src="${formState.logo}" class="dropzone-preview">` : 'Subir imagen'}</div>
+      <div class="dropzone" id="logoDrop">
+        ${formState.logo ? `<img src="${formState.logo}" class="dropzone-preview">` : 'Arrastra o haz click para subir una imagen'}
+      </div>
       <input type="file" id="logoInput" accept="image/*" hidden>
+      <small class="field-hint">Recomendado: PNG 512×512 px, cuadrado, con transparencia.</small>
     </div>
     <div class="row">
-      <div class="field"><label>Nombre</label><input class="input" id="tName" value="${formState.name}"></div>
+      <div class="field"><label>Nombre del equipo</label><input class="input" id="tName" value="${formState.name}"></div>
       <div class="field"><label>Coach</label><input class="input" id="tCoach" value="${formState.coach}"></div>
     </div>
+    
+    <!-- NUEVO CAMPO DE DINERO -->
     <div class="field">
       <label>Saldo / Dinero ($)</label>
       <input class="input" type="number" id="tMoney" value="${formState.money}">
-      <small class="field-hint" style="color:${isDebt ? 'var(--danger)' : 'var(--muted)'}">Los cambios manuales se registrarán como "Ajuste manual".</small>
+      <small class="field-hint" style="color:${isDebt ? 'var(--danger)' : 'var(--muted)'}">
+        ${isDebt ? '⚠️ El equipo tiene deuda actualmente.' : 'Edita el saldo. Los cambios manuales se registrarán en la hoja contable.'}
+      </small>
     </div>
+
     <div class="divider"></div>
     <div class="section-minihead">
       <span>ROSTER (máx. ${db.config.rosterRules.max})</span>
@@ -161,43 +180,89 @@ function renderTeamFormBody(formState, db){
 
 function renderRosterRows(formState, db, container){
   if(formState.roster.length === 0){
-    container.innerHTML = `<div class="roster-empty">Sin jugadores.</div>`;
+    container.innerHTML = `<div class="roster-empty">Sin jugadores. Añade el primero con el botón de arriba.</div>`;
     return;
   }
   container.innerHTML = formState.roster.map((r,i)=>{
     const p = db.players.find(x=>x.id===r.playerId);
+    const avatar = p?.profilePicture
+      ? `<img class="roster-avatar" src="${p.profilePicture}">`
+      : `<div class="roster-avatar roster-avatar-empty">${(p?.name||'?').slice(0,2).toUpperCase()}</div>`;
+    const flag = p?.nationalityCode ? getNationFlag(p.nationalityCode) : '';
     const rankColor = p ? getRankColor(p.rank, p.rankLevel) : 'var(--silver)';
+    const rankLine = p
+      ? `${p.rank||'—'}${p.rank!=='SSL' && p.rankDivision ? ' ' + p.rankDivision : ''} · ${p.platform||'—'}`
+      : '';
     return `
       <div class="roster-edit-row">
-        ${p?.profilePicture ? `<img class="roster-avatar" src="${p.profilePicture}">` : `<div class="roster-avatar roster-avatar-empty">${(p?.name||'?').slice(0,2).toUpperCase()}</div>`}
+        ${avatar}
         <div class="roster-edit-info">
-          <div class="roster-edit-name" style="color:${rankColor}">${p?.name || '<em>Sin nombre</em>'}</div>
+          <div class="roster-edit-name" style="color:${rankColor}">
+            ${p?.name || '<em>Sin nombre</em>'} ${flag}
+          </div>
+          <div class="roster-edit-meta">${rankLine}</div>
         </div>
-        <select class="select roster-edit-role" data-row-role="${i}">${['CAPITÁN','TITULAR','SUPLENTE'].map(x=>`<option ${r.role===x?'selected':''}>${x}</option>`).join('')}</select>
+        <select class="select roster-edit-role" data-row-role="${i}">
+          ${['CAPITÁN','TITULAR','SUPLENTE'].map(x=>`<option ${r.role===x?'selected':''}>${x}</option>`).join('')}
+        </select>
         <button class="btn btn-sm" data-row-edit="${i}" type="button">EDITAR</button>
+        ${p ? `<button class="btn btn-sm roster-config-btn" data-row-actions="${i}" type="button" title="Acciones del jugador">⚙</button>` : ''}
         <button class="btn btn-sm btn-danger" data-row-del="${i}" type="button">✕</button>
       </div>`;
   }).join('');
 
-  container.querySelectorAll('[data-row-del]').forEach(b => b.addEventListener('click', ()=>{ formState.roster.splice(+b.dataset.rowDel,1); renderRosterRows(formState, db, container); }));
-  container.querySelectorAll('[data-row-edit]').forEach(b => b.addEventListener('click', ()=>{
-    const idx = +b.dataset.rowEdit;
-    openPlayerForm(formState.roster[idx].playerId, (updated) => { formState.roster[idx].playerId = updated.id; renderRosterRows(formState, db, container); });
-  }));
+  container.querySelectorAll('[data-row-del]').forEach(b =>
+    b.addEventListener('click', ()=>{
+      formState.roster.splice(+b.dataset.rowDel,1);
+      renderRosterRows(formState, db, container);
+    }));
+  container.querySelectorAll('[data-row-edit]').forEach(b =>
+    b.addEventListener('click', ()=>{
+      const idx = +b.dataset.rowEdit;
+      const pid = formState.roster[idx].playerId;
+      openPlayerForm(pid, (updatedPlayer)=>{
+        formState.roster[idx].playerId = updatedPlayer.id;
+        renderRosterRows(formState, db, container);
+      });
+    }));
+  container.querySelectorAll('[data-row-actions]').forEach(b =>
+    b.addEventListener('click', ()=>{
+      const idx = +b.dataset.rowActions;
+      const pid = formState.roster[idx].playerId;
+      if(pid) openRowActions(pid);
+    }));
 }
 
 function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, modalCtl){
+  const rosterRows = root.querySelector('#rosterRows');
   const nameInput = root.querySelector('#tName');
   const coachInput = root.querySelector('#tCoach');
   const moneyInput = root.querySelector('#tMoney');
-  const rosterRows = root.querySelector('#rosterRows');
 
   nameInput.addEventListener('input', ()=> formState.name = nameInput.value);
   coachInput.addEventListener('input', ()=> formState.coach = coachInput.value);
   moneyInput.addEventListener('input', ()=> formState.money = +moneyInput.value || 0);
 
+  const drop = root.querySelector('#logoDrop');
+  const input = root.querySelector('#logoInput');
+  drop.addEventListener('click', ()=>input.click());
+  drop.addEventListener('dragover', e=>{e.preventDefault(); drop.classList.add('dragover');});
+  drop.addEventListener('dragleave', ()=>drop.classList.remove('dragover'));
+  drop.addEventListener('drop', e=>{e.preventDefault(); drop.classList.remove('dragover'); handleFile(e.dataTransfer.files[0]);});
+  input.addEventListener('change', ()=>handleFile(input.files[0]));
+
+  async function handleFile(f){
+    if(!f) return;
+    try{
+      const res = await compressImage(f, 512, 512);
+      formState.logo = res;
+      drop.innerHTML = `<img src="${res}" class="dropzone-preview">`;
+    }catch(e){ toast('Error procesando imagen','error'); }
+  }
+
   root.querySelector('#addRosterRow').addEventListener('click', ()=>{
-    if(formState.roster.length >= db.config.rosterRules.max) return toast('Máximo alcanzado','error');
+    if(formState.roster.length >= db.config.rosterRules.max)
+      return toast('Máximo de jugadores alcanzado','error');
     openPlayerForm(null, (newPlayer)=>{
       formState.roster.push({ playerId: newPlayer.id, role: 'TITULAR' });
       renderRosterRows(formState, db, rosterRows);
@@ -209,7 +274,8 @@ function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, mod
   root.querySelector('#saveTeam').addEventListener('click', ()=>{
     try {
       const name = formState.name.trim();
-      if(!name) return toast('Nombre obligatorio','error');
+      const coach = formState.coach.trim();
+      if(!name) return toast('El nombre es obligatorio','error');
 
       rosterRows.querySelectorAll('[data-row-role]').forEach(inp => {
         const idx = +inp.dataset.rowRole;
@@ -219,25 +285,27 @@ function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, mod
       const validRoster = formState.roster.filter(r => db.players.find(p=>p.id===r.playerId));
       let savedTeamId = team?.id || null;
       
+      // Detectar si el dinero cambió
       const previousMoney = team ? (team.money || 0) : 0;
       const newMoney = formState.money;
       const moneyDiff = newMoney - previousMoney;
 
-      // 1. Guardar equipo SIN el dinero (para no duplicar el registro)
       mutate(d => {
         if(team){
           const t = d.teams.find(x=>x.id===team.id);
-          if(t) Object.assign(t, { name, coach: formState.coach, logo: formState.logo, roster: validRoster });
+          if(!t) throw new Error('El equipo ya no existe');
+          Object.assign(t, { name, coach, logo: formState.logo, roster: validRoster, money: newMoney });
         } else {
           savedTeamId = uid('team');
           d.teams.push({
-            id: savedTeamId, name, tag:'', logo: formState.logo, coach: formState.coach,
-            divisionId: activeDivisionId, seasonId, roster: validRoster, trophies: [], money: 0
+            id: savedTeamId, name, tag:'', logo: formState.logo, coach,
+            divisionId: activeDivisionId, seasonId, roster: validRoster, trophies: [],
+            money: newMoney
           });
         }
       });
 
-      // 2. Si el dinero cambió, registrarlo como movimiento contable
+      // Registrar ajuste manual en el Ledger si hubo cambios
       if (team && moneyDiff !== 0) {
         recordTransaction({
           teamId: team.id,
@@ -246,23 +314,209 @@ function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, mod
           reason: 'Ajuste manual desde formulario',
           meta: { previousMoney, newMoney }
         });
-      } else if (!team && newMoney > 0) {
-        recordTransaction({
-          teamId: savedTeamId,
-          type: 'manual_adjust',
-          amount: newMoney,
-          reason: 'Saldo inicial de equipo',
-          meta: { previousMoney: 0, newMoney }
-        });
       }
+
+      try { logChange(team?'edit':'create', 'team', savedTeamId, `Equipo "${name}" ${team?'editado':'creado'}`); }
+      catch(e){ console.warn(e); }
 
       toast('Equipo guardado','success');
       modalCtl.close();
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch(err) {
-      toast('Error: ' + err.message, 'error');
+      console.error('[ZENITH] Error guardando equipo:', err);
+      toast('Error al guardar: ' + (err.message || 'desconocido'), 'error');
     }
   });
 }
 
-// ... openPlayerForm y compressImage se mantienen igual
+// ============================================================
+// FORMULARIO DE JUGADOR (Sin cambios en esta fase)
+// ============================================================
+export function openPlayerForm(playerId=null, onSaved=null){
+  const db = getDB();
+  const player = playerId ? db.players.find(p=>p.id===playerId) : null;
+
+  const optsRank = RANKS.map(r => `<option value="${r}" ${player?.rank===r?'selected':''}>${r}</option>`).join('');
+  const optsLevel = RANK_LEVELS.map(n => `<option value="${n}" ${player?.rankLevel===n?'selected':''}>${n}</option>`).join('');
+  const optsDiv = RANK_DIVISIONS.map(d => `<option value="${d}" ${player?.rankDivision===d?'selected':''}>${d}</option>`).join('');
+  const optsPlatform = PLATFORMS.map(p =>
+    `<option value="${p.id}" ${player?.platform===p.id?'selected':''}>${p.label}</option>`).join('');
+  const optsNation = `
+    <option value="">— Sin especificar —</option>
+    ${NATIONS.map(n => `<option value="${n.code}" ${player?.nationalityCode===n.code?'selected':''}>${n.flag} ${n.name}</option>`).join('')}
+  `;
+
+  const extraButtons = player ? `
+    <div class="player-form-actions">
+      <button type="button" class="btn btn-sm" id="pfTransfer">🔄 TRANSFERIR</button>
+      <button type="button" class="btn btn-sm" id="pfFree">🆓 AGENTE LIBRE</button>
+      <button type="button" class="btn btn-sm btn-danger" id="pfDelete">🗑 ELIMINAR</button>
+    </div>
+  ` : '';
+
+  openModal({
+    id: 'player-form-' + (playerId || 'new'),
+    title: player ? 'EDITAR JUGADOR' : 'NUEVO JUGADOR',
+    wide: true,
+    body: `
+      ${extraButtons}
+      <div class="player-form-head">
+        <div class="player-photo-block">
+          <div class="player-photo-frame" id="photoDrop">
+            ${player?.profilePicture
+              ? `<img id="photoImg" src="${player.profilePicture}" class="player-photo-img">`
+              : `<div class="player-photo-placeholder">SIN<br>FOTO</div>`}
+          </div>
+          <input type="file" id="photoInput" accept="image/*" hidden>
+          <button class="btn btn-sm" id="photoBtn" type="button">SUBIR FOTO</button>
+          <small class="field-hint">256×256 px recomendado</small>
+        </div>
+
+        <div class="player-form-fields">
+          <div class="field"><label>Nombre del jugador</label><input class="input" id="pfName" value="${player?.name||''}"></div>
+          <div class="row">
+            <div class="field"><label>Plataforma</label><select class="select" id="pfPlatform">${optsPlatform}</select></div>
+            <div class="field"><label>Nacionalidad</label><select class="select" id="pfNation">${optsNation}</select></div>
+          </div>
+          <div class="row-3">
+            <div class="field"><label>Rango</label><select class="select" id="pfRank">${optsRank}</select></div>
+            <div class="field" id="levelWrap"><label>Nivel</label><select class="select" id="pfLevel">${optsLevel}</select></div>
+            <div class="field" id="divWrap"><label>División</label><select class="select" id="pfDiv">${optsDiv}</select></div>
+          </div>
+          <div class="field">
+            <label>RL Tracker (URL del perfil)</label>
+            <input class="input" id="pfTracker" type="url" placeholder="https://rocketleague.tracker.network/rocket-league/profile/..." value="${player?.rlTracker||''}">
+          </div>
+        </div>
+      </div>
+    `,
+    footer: `
+      <button class="btn btn-ghost" data-close>CANCELAR</button>
+      <button class="btn btn-primary" id="savePlayer">GUARDAR JUGADOR</button>
+    `,
+    onMount: (root) => {
+      let photoData = player?.profilePicture || '';
+      const photoDrop = root.querySelector('#photoDrop');
+      const photoInput = root.querySelector('#photoInput');
+      const photoBtn = root.querySelector('#photoBtn');
+      const openPicker = () => photoInput.click();
+      photoDrop.addEventListener('click', openPicker);
+      photoBtn.addEventListener('click', openPicker);
+      photoInput.addEventListener('change', () => handlePhoto(photoInput.files[0]));
+
+      async function handlePhoto(f){
+        if(!f) return;
+        try{
+          const res = await compressImage(f, 256, 256);
+          photoData = res;
+          photoDrop.innerHTML = `<img src="${res}" class="player-photo-img">`;
+        }catch(e){ toast('Error procesando foto','error'); }
+      }
+
+      const rankSel = root.querySelector('#pfRank');
+      const levelWrap = root.querySelector('#levelWrap');
+      const divWrap = root.querySelector('#divWrap');
+      function refresh(){
+        const isSSL = rankSel.value === 'SSL';
+        levelWrap.style.display = isSSL ? 'none' : '';
+        divWrap.style.display = isSSL ? 'none' : '';
+      }
+      rankSel.addEventListener('change', refresh);
+      refresh();
+
+      if(player){
+        const importLazy = async () => await import('../services/transfers.js');
+        root.querySelector('#pfTransfer')?.addEventListener('click', async () => {
+          closeTopModal();
+          setTimeout(async () => {
+            const { openTransferModal } = await importLazy();
+            openTransferModal(player.id);
+          }, 100);
+        });
+        root.querySelector('#pfFree')?.addEventListener('click', async () => {
+          if(!confirm(`¿Convertir a ${player.name} en agente libre?`)) return;
+          const { doFreeAgent } = await importLazy();
+          doFreeAgent(player.id);
+        });
+        root.querySelector('#pfDelete')?.addEventListener('click', async () => {
+          if(!confirm(`⚠️ ¿Eliminar definitivamente a ${player.name}?`)) return;
+          const { doDeletePlayer } = await importLazy();
+          doDeletePlayer(player.id);
+        });
+      }
+
+      root.querySelector('#savePlayer').addEventListener('click', ()=>{
+        try {
+          const name = root.querySelector('#pfName').value.trim();
+          if(!name) return toast('El nombre es obligatorio','error');
+          const rank = root.querySelector('#pfRank').value;
+          const isSSL = rank === 'SSL';
+          const payload = {
+            name,
+            platform: root.querySelector('#pfPlatform').value,
+            nationalityCode: root.querySelector('#pfNation').value,
+            rank,
+            rankLevel: isSSL ? null : +root.querySelector('#pfLevel').value,
+            rankDivision: isSSL ? null : root.querySelector('#pfDiv').value,
+            rlTracker: root.querySelector('#pfTracker').value.trim(),
+            profilePicture: photoData
+          };
+
+          let saved;
+          mutate(d => {
+            if(player){
+              const p = d.players.find(x=>x.id===player.id);
+              if(!p) throw new Error('El jugador ya no existe');
+              Object.assign(p, payload);
+              saved = p;
+            } else {
+              saved = {
+                id: uid('ply'),
+                history: [], sanctions: [], pigHistory: [], pigTrend: '—',
+                careerSnapshots: [], trophies: [], status: 'owned', pendingTeamId: null,
+                ...payload
+              };
+              d.players.push(saved);
+            }
+          });
+
+          try { logChange(player?'edit':'create','player', saved.id, `Jugador "${name}" ${player?'editado':'creado'}`); }
+          catch(e){ console.warn(e); }
+
+          toast('Jugador guardado','success');
+          closeTopModal();
+          onSaved?.(saved);
+          if(location.hash.startsWith('#/players')) window.dispatchEvent(new HashChangeEvent('hashchange'));
+        } catch(err) {
+          console.error('[ZENITH] Error guardando jugador:', err);
+          toast('Error al guardar: ' + (err.message || 'desconocido'), 'error');
+        }
+      });
+    }
+  });
+}
+
+export function compressImage(file, maxW, maxH){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        const ratio = Math.min(maxW / width, maxH / height, 1);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/webp', 0.85));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
