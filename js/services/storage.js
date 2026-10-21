@@ -74,6 +74,7 @@ function normalizeTeam(t){
   if(t.tag === undefined)  t.tag = '';
   if(t.logo === undefined) t.logo = '';
   if(t.coach === undefined) t.coach = '';
+  if(t.assistant === undefined) t.assistant = ''; // <-- NUEVO
   if(t.divisionId === undefined) t.divisionId = null;
   if(t.seasonId === undefined)   t.seasonId = null;
   if(t.money === undefined)      t.money = 0; 
@@ -167,6 +168,7 @@ function migrate(db){
   db.divisions  ||= [];
   db.teams      ||= [];
   db.players    ||= [];
+  db.coaches    ||= []; // <-- NUEVO
   db.matches    ||= [];
   db.playoffs   ||= [];
   db.news       ||= [];
@@ -177,7 +179,7 @@ function migrate(db){
   db.trophyHistory ||= [];
   db.trophies      ||= {};
   db.economyLedger ||= []; 
-  db.contracts     ||= []; // <-- AÑADIDO AQUÍ
+  db.contracts     ||= []; 
   if(db.transferBannerBg === undefined) db.transferBannerBg = '';
 
   if(!Array.isArray(db.archivedSeasons)) db.archivedSeasons = [];
@@ -188,6 +190,7 @@ function migrate(db){
   db.config.pigWeights  ||= { goal:2.0, assist:1.5, save:1.0, missDivisor:5 };
   db.config.badStreak   ||= { enabled:true, minGames:5, consecutiveLosses:3, penalty:0.10 };
   db.config.seasonEnd   ||= { autoAssignTrophies:true, requireAllDivisions:true };
+  db.config.marketSettings ||= { open: true, allowTransfers: true, allowLoans: true }; // <-- NUEVO
   
   if (!db.config.economy) {
     db.config.economy = JSON.parse(JSON.stringify(ECONOMY_DEFAULTS));
@@ -261,6 +264,7 @@ function migrateSnapshot(snapshot, liveDB){
   s.divisions ||= [];
   s.teams ||= [];
   s.players ||= [];
+  s.coaches ||= []; // <-- NUEVO
   s.matches ||= [];
   s.playoffs ||= [];
   s.news ||= [];
@@ -270,12 +274,13 @@ function migrateSnapshot(snapshot, liveDB){
   s.trophyHistory ||= [];
   s.trophies ||= {};
   s.economyLedger ||= [];
-  s.contracts ||= []; // <-- AÑADIDO AQUÍ
+  s.contracts ||= []; 
   s.transferBannerBg ||= '';
 
   s.config ||= JSON.parse(JSON.stringify(liveDB.config));
   if(!s.config.seasonEnd) s.config.seasonEnd = { autoAssignTrophies:true, requireAllDivisions:true };
   if(!s.config.ai) s.config.ai = JSON.parse(JSON.stringify(liveDB.config.ai));
+  if(!s.config.marketSettings) s.config.marketSettings = { open: true, allowTransfers: true, allowLoans: true }; // <-- NUEVO
   
   s.config.theme = JSON.parse(JSON.stringify(liveDB.config.theme || { active: getDefaultTheme(), presets: [] }));
   s.config.economy = JSON.parse(JSON.stringify(liveDB.config.economy || ECONOMY_DEFAULTS));
