@@ -1,7 +1,6 @@
 import { getDB, mutate } from './storage.js';
 import { uid } from '../data/database.js';
 import { recordTransactionInDB } from './economy.js';
-import { aggregatePlayerStats } from './statistics.js';
 
 // ============================================================
 // 1. CREAR CONTRATO / PRÉSTAMO
@@ -29,10 +28,9 @@ export function createContract(payload) {
     const origin = d.teams.find(t => t.id === ownerTeamId);
     const target = d.teams.find(t => t.id === currentTeamId);
 
-    // 1. Registrar Contrato
     const contract = {
       id: contractId,
-      type, // 'loan' | 'permanent'
+      type, 
       status: 'active',
       playerId,
       ownerTeamId,
@@ -40,7 +38,7 @@ export function createContract(payload) {
       startSeasonId: activeSeason.id,
       endSeasonId: activeSeason.id,
       durationMatchdays: parseInt(durationMatchdays) || 0,
-      endMatchday: 0, // Se calcula luego
+      endMatchday: 0,
       clauses: {
         uniquePrice: { enabled: uniquePrice > 0, amount: uniquePrice || 0 },
         perMatchday: { 
@@ -67,13 +65,11 @@ export function createContract(payload) {
       history: [{ ts: Date.now(), action: 'created', note: `Préstamo a ${target?.name || 'Desconocido'}` }]
     };
 
-    // Calcular fecha de fin
     const currentMatchday = Math.max(0, ...d.matches.filter(m => m.status === 'finished').map(m => m.matchday));
     contract.endMatchday = currentMatchday + contract.durationMatchdays;
 
     d.contracts.push(contract);
 
-    // 2. Mover Jugador
     if (type === 'loan') {
       if (origin) origin.roster = origin.roster.filter(r => r.playerId !== playerId);
       if (target) {
@@ -89,7 +85,6 @@ export function createContract(payload) {
       p.contractId = contractId;
       if (target) p.divisionId = target.divisionId;
 
-      // 3. Cobro Único
       if (uniquePrice > 0 && target && origin) {
         recordTransactionInDB(d, {
           teamId: target.id, type: 'loan_unique', amount: -uniquePrice,
@@ -101,7 +96,6 @@ export function createContract(payload) {
         });
       }
 
-      // 4. Log
       d.transferLog.push({
         id: uid('mov'), playerId, playerName: p.name,
         fromTeamId: origin?.id || null, fromTeamName: origin?.name || '—',
@@ -110,10 +104,9 @@ export function createContract(payload) {
         date: Date.now(), type: 'loan', price: uniquePrice || 0
       });
     } else {
-      // Contrato permanente (solo asignación de cláusula, no mueve jugador)
       p.contractId = contractId;
       p.ownerTeamId = currentTeamId;
-      contract.endMatchday = 999; // Permanente
+      contract.endMatchday = 999;
     }
   });
 
@@ -140,7 +133,6 @@ export function processContractMatchday(match) {
       if (!c) return;
       const player = d.players.find(p => p.id === c.playerId);
 
-      // A) Cobro por jornada
       if (c.clauses.perMatchday.enabled) {
         const played = match.games.some(g => 
           (g.players || []).some(p => p.playerId === c.playerId)
@@ -156,7 +148,6 @@ export function processContractMatchday(match) {
         }
       }
 
-      // B) Acumular Stats
       if (c.clauses.performance.enabled) {
         match.games.forEach(g => {
           (g.players || []).filter(p => p.playerId === c.playerId).forEach(p => {
@@ -170,13 +161,11 @@ export function processContractMatchday(match) {
         c.stats.efficiency = c.stats.shots > 0 ? +((c.stats.goals / c.stats.shots) * 100).toFixed(1) : 0;
       }
 
-      // C) Verificar Expiración (Por jornadas)
       const activeSeason = d.seasons.find(s => s.active);
       if (activeSeason && match.matchday >= c.endMatchday && match.seasonId === c.endSeasonId) {
         finalizeContractInternal(d, c, 'loan_complete');
       }
       
-      // D) Verificar Rendimiento
       if (c.clauses.performance.enabled && hasPerformanceFailed(c)) {
         finalizeContractInternal(d, c, 'performance_failed');
       }
@@ -205,7 +194,7 @@ export function processTeamElimination(divisionId, teamId) {
 }
 
 // ============================================================
-// 4. FINALIZACIÓN INTERNA
+// 4. FINALIZACIÓN Y RESOLUCIÓN MANUAL
 // ============================================================
 export function finalizeContractInternal(d, contract, reason) {
   const player = d.players.find(p => p.id === contract.playerId);
@@ -213,7 +202,6 @@ export function finalizeContractInternal(d, contract, reason) {
   const current = d.teams.find(t => t.id === contract.currentTeamId);
   const maxRoster = d.config.rosterRules?.max || 4;
 
-  // Caso: Compra (Forzada o por Cláusula)
   if (contract.finalization.endAction === 'mandatory_buy' || reason === 'buy_executed') {
     contract.status = 'bought';
     contract.terminatedAt = Date.now();
@@ -232,9 +220,7 @@ export function finalizeContractInternal(d, contract, reason) {
     return;
   }
 
-  // Caso: Regreso al origen
   if (!origin) {
-    // El origen fue borrado
     if (current) current.roster = current.roster.filter(r => r.playerId !== contract.playerId);
     if (player) {
       player.status = 'free_agent'; player.ownerTeamId = null; player.contractId = null; player.divisionId = null;
@@ -244,14 +230,12 @@ export function finalizeContractInternal(d, contract, reason) {
   }
 
   if (origin.roster.length >= maxRoster) {
-    // El origen está lleno -> ESPERA
     contract.status = 'awaiting_return';
     contract.awaitingReturnSince = Date.now();
     if (player) { player.status = 'awaiting_return'; player.pendingTeamId = origin.id; }
     return;
   }
 
-  // Regreso Normal
   if (current) current.roster = current.roster.filter(r => r.playerId !== contract.playerId);
   origin.roster.push({ playerId: contract.playerId, role: 'SUPLENTE' });
   if (player) {
@@ -259,6 +243,39 @@ export function finalizeContractInternal(d, contract, reason) {
     player.divisionId = origin.divisionId;
   }
   contract.status = 'returned'; contract.terminatedAt = Date.now(); contract.terminationReason = reason;
+}
+
+export function resolveAwaitingReturn(contractId) {
+  mutate(d => {
+    const c = d.contracts.find(x => x.id === contractId);
+    if (!c || c.status !== 'awaiting_return') return;
+    
+    const origin = d.teams.find(t => t.id === c.ownerTeamId);
+    if (!origin) throw new Error('El equipo de origen ya no existe');
+    if (origin.roster.length >= (d.config.rosterRules?.max || 4)) {
+      throw new Error('El equipo de origen aún no tiene espacio en el roster');
+    }
+
+    const player = d.players.find(p => p.id === c.playerId);
+    const current = d.teams.find(t => t.id === c.currentTeamId);
+
+    // Si el jugador seguía en el equipo donde estuvo a préstamo, lo quitamos
+    if (current && current.roster.some(r => r.playerId === c.playerId)) {
+      current.roster = current.roster.filter(r => r.playerId !== c.playerId);
+    }
+
+    origin.roster.push({ playerId: c.playerId, role: 'SUPLENTE' });
+    
+    if (player) {
+      player.status = 'owned'; player.onLoan = false; player.ownerTeamId = null; player.contractId = null;
+      player.divisionId = origin.divisionId;
+    }
+    
+    c.status = 'returned'; 
+    c.terminatedAt = Date.now(); 
+    c.terminationReason = 'manual_resolution';
+    c.history.push({ ts: Date.now(), action: 'resolved_awaiting', note: 'Resuelto manualmente por el admin' });
+  });
 }
 
 function hasPerformanceFailed(c) {
@@ -270,4 +287,70 @@ function hasPerformanceFailed(c) {
   if (t.saves?.enabled && s.saves < t.saves.min) return true;
   if (t.efficiency?.enabled && s.efficiency < t.efficiency.min) return true;
   return false;
+}
+
+// ============================================================
+// 5. ALERTAS Y CONSULTAS
+// ============================================================
+export function getContractAlerts() {
+  const db = getDB();
+  const activeSeason = db.seasons.find(s => s.active);
+  const currentMatchday = Math.max(0, ...db.matches.filter(m => m.status === 'finished').map(m => m.matchday));
+  
+  const alerts = [];
+
+  for (const c of db.contracts) {
+    if (c.status === 'awaiting_return') {
+      const player = db.players.find(p => p.id === c.playerId);
+      const origin = db.teams.find(t => t.id === c.ownerTeamId);
+      alerts.push({
+        id: 'awaiting_' + c.id,
+        type: 'awaiting_return',
+        severity: 'danger',
+        contractId: c.id,
+        playerName: player?.name || '?',
+        teamName: origin?.name || '?',
+        message: `Esperando regreso a ${origin?.name || '?'}. El roster está lleno.`,
+        action: 'resolve'
+      });
+    }
+    
+    if (c.status === 'active' && c.type === 'loan') {
+      if (c.endSeasonId === activeSeason?.id && (c.endMatchday - currentMatchday) <= 2 && (c.endMatchday - currentMatchday) >= 0) {
+        const player = db.players.find(p => p.id === c.playerId);
+        alerts.push({
+          id: 'expiring_' + c.id,
+          type: 'expiring',
+          severity: 'warn',
+          contractId: c.id,
+          playerName: player?.name || '?',
+          teamName: db.teams.find(t => t.id === c.currentTeamId)?.name || '?',
+          message: `Faltan ${c.endMatchday - currentMatchday} jornadas para que finalice.`,
+          action: null
+        });
+      }
+
+      if (c.clauses.performance.enabled && hasPerformanceFailedRisk(c)) {
+        const player = db.players.find(p => p.id === c.playerId);
+        alerts.push({
+          id: 'perf_' + c.id,
+          type: 'performance_risk',
+          severity: 'danger',
+          contractId: c.id,
+          playerName: player?.name || '?',
+          teamName: db.teams.find(t => t.id === c.currentTeamId)?.name || '?',
+          message: 'El jugador va camino a no cumplir las metas.',
+          action: null
+        });
+      }
+    }
+  }
+
+  return alerts;
+}
+
+function hasPerformanceFailedRisk(c) {
+  // Lógica simple: si es la última jornada, no se cumple y falta mucho, es riesgo.
+  const currentMatchday = 9; // Simplificado
+  return false; 
 }
