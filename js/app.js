@@ -20,6 +20,8 @@ import { configView, bindConfigEvents } from './views/config.js';
 import { ballonDorView, bindBallonDorEvents } from './views/ballonDor.js';
 import { marketView, bindMarketEvents } from './views/market.js';
 import { performanceView, bindPerformanceEvents } from './views/performance.js';
+import { contractsView, bindContractsEvents } from './views/contracts.js'; // <-- NUEVO
+import { coachesView, bindCoachesEvents } from './views/coaches.js'; // <-- NUEVO
 import { destroyAllCarousels } from './views/widgetCarousel.js';
 
 window.addEventListener('error', e => console.error('[ZENITH] error:', e.error || e.message));
@@ -30,9 +32,6 @@ window.__zenithNotifyChange = notifyChange;
 
 window.__zenithHasDownloadedThisSession = false;
 
-// ============================================================
-// OVERLAY DE CARGA
-// ============================================================
 function createLoadOverlay(){
   if (document.getElementById('zenithLoadOverlay')) return;
   const div = document.createElement('div');
@@ -62,9 +61,6 @@ function hideLoadOverlay(){
   overlay.classList.remove('visible');
 }
 
-// ============================================================
-// CONFIRM DISCARDS CHANGES
-// ============================================================
 function confirmDiscardChanges(count){
   return new Promise((resolve) => {
     let resolved = false;
@@ -104,9 +100,6 @@ function confirmDiscardChanges(count){
   });
 }
 
-// ============================================================
-// DESCARGA INICIAL
-// ============================================================
 export async function performInitialDownload(opts = {}){
   const { skipConfirm = false, reason = 'boot' } = opts;
 
@@ -175,9 +168,6 @@ export async function performInitialDownload(opts = {}){
 
 window.__zenithPerformInitialDownload = performInitialDownload;
 
-// ============================================================
-// BOOT
-// ============================================================
 async function boot(){
   try {
     createLoadOverlay();
@@ -223,9 +213,6 @@ async function boot(){
 }
 boot();
 
-// ============================================================
-// RUTAS
-// ============================================================
 registerRoute('dashboard', dashboardView);
 registerRoute('teams',     teamsView);
 registerRoute('players',   playersView);
@@ -238,20 +225,16 @@ registerRoute('config',    configView);
 registerRoute('ballonDor', ballonDorView);
 registerRoute('market',    marketView);
 registerRoute('performance', performanceView);
+registerRoute('contracts', contractsView); // <-- NUEVO
+registerRoute('coaches', coachesView); // <-- NUEVO
 
-// ============================================================
-// RENDER
-// ============================================================
 let _currentViewFn = null;
 let _currentParams = [];
 
-// FIX: Función para destruir componentes pesados antes de cambiar de vista
 function cleanupView() {
-  // 1. Destruir gráficas de Chart.js si existen
   if (window._chartStatsInstance) { window._chartStatsInstance.destroy(); window._chartStatsInstance = null; }
   if (window._chartEconomyInstance) { window._chartEconomyInstance.destroy(); window._chartEconomyInstance = null; }
   
-  // 2. Destruir intervalos de carruseles
   if (typeof destroyAllCarousels === 'function') {
     destroyAllCarousels();
   }
@@ -260,7 +243,6 @@ function cleanupView() {
 function renderView(viewFn, params){
   const view = document.getElementById('view');
   try {
-    // FIX: Limpiar memoria antes de reescribir el HTML
     cleanupView();
 
     view.innerHTML = viewFn(params);
@@ -277,6 +259,8 @@ function renderView(viewFn, params){
     safeBind(bindBallonDorEvents);
     safeBind(bindMarketEvents);
     safeBind(bindPerformanceEvents);
+    safeBind(bindContractsEvents); // <-- NUEVO
+    safeBind(bindCoachesEvents); // <-- NUEVO
 
     updateActiveNav();
     updateDivisionHeader();
@@ -318,12 +302,6 @@ window.addEventListener('zenith:sync-pulled', () => {
   refreshView();
 });
 
-// ... (Resto de funciones de NAV y HEADER sin cambios, se mantienen igual) ...
-// [NOTA: El resto de app.js del gestor se mantiene idéntico hasta el final]
-
-// ============================================================
-// NAV
-// ============================================================
 function updateActiveNav(){
   const current = (location.hash.replace(/^#\/?/, '') || 'dashboard').split('/')[0];
   document.querySelectorAll('.nav-item').forEach(a => {
@@ -345,9 +323,6 @@ document.getElementById('menuToggle')?.addEventListener('click', () => {
   document.getElementById('sidebar')?.classList.toggle('open');
 });
 
-// ============================================================
-// HEADER
-// ============================================================
 function updateDivisionHeader(){
   const db = getDB();
   const active = db.divisions.find(d => d.id === state.divisionId) || db.divisions[0];
