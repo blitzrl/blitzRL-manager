@@ -46,8 +46,34 @@ export function dashboardView(){
     playoffBracket:  (w) => widgetPlayoffBracket(division)
   };
 
+  const marketSettings = db.config.marketSettings || { open: true };
+
   return `
     ${viewBanner}
+    
+    ${!db.viewSeasonId ? `
+    <div class="card" style="margin-bottom:20px; border-left:4px solid ${marketSettings.open ? 'var(--success)' : 'var(--danger)'}">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px">
+        <div>
+          <div style="font-family:var(--font-display); font-size:16px; color:var(--silver-light); margin-bottom:4px;">
+            CONTROL DEL MERCADO
+          </div>
+          <div style="font-size:12px; color:var(--muted)">
+            Los coaches no podrán hacer fichajes ni préstamos mientras esté cerrado.
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px">
+          <span class="badge ${marketSettings.open ? 'badge-win' : 'badge-live'}" style="font-size:14px; padding:6px 12px;">
+            ${marketSettings.open ? '🟢 ABIERTO' : '🔴 CERRADO'}
+          </span>
+          <button class="btn ${marketSettings.open ? 'btn-danger' : 'btn-primary'}" id="btnToggleMarket">
+            ${marketSettings.open ? 'CERRAR MERCADO' : 'ABRIR MERCADO'}
+          </button>
+        </div>
+      </div>
+    </div>
+    ` : ''}
+
     <div class="home-toolbar">
       <span class="chip">${isEditMode ? 'MODO EDICIÓN' : 'MODO LECTURA'}</span>
       <button class="btn btn-sm" id="btnToggleEdit">${isEditMode ? '✓ GUARDAR LAYOUT' : '⚙ EDITAR HOME'}</button>
@@ -74,7 +100,7 @@ function renderViewBanner(db){
   const arch = (db.archivedSeasons || []).find(s => s.id === db.viewSeasonId);
   const name = arch?.name || 'Temporada archivada';
   const year = arch?.year || '';
-  const champs = arch?.championByDivision || {};
+  const champs = arch?.data?.championByDivision || {};
   const champCount = Object.keys(champs).length;
 
   return `
@@ -118,6 +144,19 @@ export function bindDashboardEvents(){
       switchToSeason(null);
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     });
+  });
+
+  document.getElementById('btnToggleMarket')?.addEventListener('click', () => {
+    const db = getDB();
+    const current = db.config.marketSettings?.open ?? true;
+    
+    mutate(d => {
+      d.config.marketSettings = d.config.marketSettings || {};
+      d.config.marketSettings.open = !current;
+    });
+    
+    toast(`Mercado ${!current ? 'ABIERTO' : 'CERRADO'}`, 'success');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
   });
 
   document.getElementById('btnToggleEdit')?.addEventListener('click', () => {
@@ -237,9 +276,6 @@ export function bindDashboardEvents(){
   });
 }
 
-// ============================================================
-// CONFIG DE WIDGET
-// ============================================================
 function openWidgetConfig(instanceId){
   const db = getDB();
   const w = db.widgets.find(x => x.instanceId === instanceId);
@@ -358,9 +394,6 @@ function openWidgetConfig(instanceId){
   });
 }
 
-// ============================================================
-// RESIZE
-// ============================================================
 function initWidgetResize(){
   document.querySelectorAll('.widget-slot').forEach(slot => {
     if(slot.querySelector('.widget-resize-corner')) return;
@@ -404,9 +437,6 @@ function initWidgetResize(){
   });
 }
 
-// ============================================================
-// MODAL DE NOTICIA
-// ============================================================
 function openNewsModal(newsId){
   const db = getDB();
   const n = db.news.find(x => x.id === newsId);
@@ -481,9 +511,6 @@ export function renderBlocksHTML(blocks, db){
   }).join('');
 }
 
-// ============================================================
-// HELPERS DE CARRUSEL INLINE
-// ============================================================
 function buildCarouselHTML(items, slideHTMLs, instanceId, interval){
   if(items.length === 0) return '';
   if(items.length === 1){
@@ -502,9 +529,6 @@ function buildCarouselHTML(items, slideHTMLs, instanceId, interval){
   `;
 }
 
-// ============================================================
-// WIDGETS CON CARRUSEL
-// ============================================================
 function widgetUpcoming(w, division){
   const db = getDB();
   const itemIds = w.config?.itemIds || (w.config?.matchId ? [w.config.matchId] : []);
@@ -724,9 +748,6 @@ function widgetPlayoffBracket(division){
   `);
 }
 
-// ============================================================
-// OTROS WIDGETS
-// ============================================================
 function widgetStandings(rows, division){
   const zones = division?.config?.zones?.zones || [];
   const typeLabels = { champion:'Campeón', playoff:'Play-Offs', playin:'Play-In', promotion:'Ascenso', relegation:'Descenso' };
@@ -860,9 +881,6 @@ function widgetPlayerSpotlight(players, db){
   `);
 }
 
-// ============================================================
-// HELPERS
-// ============================================================
 function card(title, body){
   return `<div class="card"><div class="card-header"><div class="card-title"><span class="dot">◆</span>${title}</div></div>${body}</div>`;
 }
