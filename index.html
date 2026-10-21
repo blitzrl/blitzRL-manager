@@ -1,101 +1,107 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ZENITH MANAGER — Rise to the Zenith</title>
-<script src="https://cdn.jsdelivr.net/npm/@twemoji/api@15.0.3/dist/twemoji.min.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<link rel="stylesheet" href="css/variables.css" />
-<link rel="stylesheet" href="css/layout.css" />
-<link rel="stylesheet" href="css/components.css" />
-<link rel="stylesheet" href="css/tables.css" />
-<link rel="stylesheet" href="css/forms.css" />
-<link rel="stylesheet" href="css/responsive.css" />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZENITH MANAGER</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/tables.css">
+  <link rel="stylesheet" href="css/forms.css">
+  <link rel="stylesheet" href="css/responsive.css">
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
-<div id="app" class="app-shell">
-  <aside class="sidebar" id="sidebar">
-    <div class="brand">
-      <img id="brandLogo" src="" alt="ZENITH" class="brand-mark" style="display:none;object-fit:contain">
-      <svg id="brandLogoDefault" viewBox="0 0 60 40" class="brand-mark">
-        <polygon points="0,40 30,0 60,40 30,26" fill="url(#zgrad)"/>
-        <defs><linearGradient id="zgrad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#E8EAED"/><stop offset="100%" stop-color="#6FA8FF"/>
-        </linearGradient></defs>
-      </svg>
-      <span class="brand-name" id="brandName">ZENITH</span>
-    </div>
-    <nav class="nav">
-      <a class="nav-item" data-route="dashboard"><span class="nav-ico">◆</span> Dashboard</a>
-      <div class="nav-group">
+  <div class="app-shell">
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 34 24" fill="none">
+          <path d="M2 22L17 2L32 22H2Z" stroke="var(--accent)" stroke-width="2"/>
+          <path d="M8 22L17 10L26 22H8Z" fill="var(--accent)" opacity=".3"/>
+        </svg>
+        <div class="brand-name" id="brandName">ZENITH</div>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-label">GENERAL</div>
+        <a class="nav-item" data-route="dashboard"><span class="nav-ico">◆</span> Inicio</a>
+        <a class="nav-item" data-route="rosters"><span class="nav-ico">◆</span> Roster</a>
+        <a class="nav-item" data-route="teams"><span class="nav-ico">◆</span> Equipos</a>
+        <a class="nav-item" data-route="players"><span class="nav-ico">◆</span> Jugadores</a>
+        <a class="nav-item" data-route="coaches"><span class="nav-ico">◆</span> Coaches</a>
+        
         <div class="nav-label">COMPETICIÓN</div>
-        <a class="nav-item" data-route="teams">Equipos</a>
-        <a class="nav-item" data-route="players">Jugadores</a>
-        <a class="nav-item" data-route="matches">Jornadas</a>
-        <a class="nav-item" data-route="playoffs">Play-Offs</a>
-      </div>
-      <div class="nav-group">
-        <div class="nav-label">ANÁLISIS</div>
-        <a class="nav-item" data-route="stats">Stats</a>
-        <a class="nav-item" data-route="rosters">Rosters</a>
-        <a class="nav-item" data-route="ballonDor">Ballon d'Or</a>
-        <a class="nav-item" data-route="performance">Performance</a>
-      </div>
-      <div class="nav-group">
-        <div class="nav-label">MERCADO</div>
-        <a class="nav-item" data-route="market">Transfer Market</a>
-      </div>
-      <div class="nav-group">
-        <div class="nav-label">MEDIA</div>
-        <a class="nav-item" data-route="news">Noticias</a>
-      </div>
-      <div class="nav-group">
-        <div class="nav-label">SISTEMA</div>
-        <a class="nav-item" data-route="config">Configuración</a>
-      </div>
-    </nav>
-    <div class="sidebar-footer"><small>v2.5 — Season System</small></div>
-  </aside>
+        <a class="nav-item" data-route="matches"><span class="nav-ico">◆</span> Jornadas</a>
+        <a class="nav-item" data-route="playoffs"><span class="nav-ico">◆</span> Playoffs</a>
+        <a class="nav-item" data-route="stats"><span class="nav-ico">◆</span> Stats</a>
+        <a class="nav-item" data-route="performance"><span class="nav-ico">◆</span> Performance</a>
+        <a class="nav-item" data-route="ballonDor"><span class="nav-ico">◆</span> Ballon d'Or</a>
 
-  <div class="main">
-    <header class="topbar">
-      <button class="menu-toggle" id="menuToggle" aria-label="Menu">☰</button>
-      <div class="topbar-left">
-        <div class="season-selector" id="seasonSelector">
-          <button class="chip chip-season chip-season-btn" id="seasonBtn">
-            <span id="currentSeasonName">SEASON 1</span>
-            <span class="chev">▾</span>
-          </button>
-          <div class="season-dropdown hidden" id="seasonDropdown"></div>
-        </div>
-        <div class="division-selector" id="divisionSelector">
-          <button class="chip chip-division chip-division-btn" id="divisionBtn">
-            <span id="currentDivisionName">ZENITH I</span>
-            <span class="chev">▾</span>
-          </button>
-          <div class="division-dropdown hidden" id="divisionDropdown"></div>
-        </div>
-        <span class="chip chip-readonly" id="readOnlyChip" style="display:none">📖 MODO LECTURA</span>
-      </div>
-      <div class="topbar-right">
-        <span class="motto" id="brandMotto">YOUR LEVEL IS NOT YOUR LIMIT</span>
-        <button class="btn btn-sm" id="btnPublishTopbar" title="Publicar en el visualizador">
-          <span id="publishTopbarIcon">☁</span>
-          <span id="publishTopbarLabel">PUBLICAR</span>
-        </button>
-      </div>
-    </header>
+        <div class="nav-label">ADMINISTRACIÓN</div>
+        <a class="nav-item" data-route="contracts"><span class="nav-ico">◆</span> Contratos</a>
+        <a class="nav-item" data-route="market"><span class="nav-ico">◆</span> Mercado</a>
+        <a class="nav-item" data-route="news"><span class="nav-ico">◆</span> Noticias</a>
+        <a class="nav-item" data-route="config"><span class="nav-ico">◆</span> Configuración</a>
+      </nav>
 
-    <main id="view" class="view"></main>
+      <div class="sidebar-footer">
+        <div id="brandMotto">YOUR LEVEL IS NOT YOUR LIMIT</div>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main">
+      <header class="topbar">
+        <button class="menu-toggle" id="menuToggle">☰</button>
+        
+        <div class="topbar-left">
+          <div class="division-selector" id="divisionSelector">
+            <div class="chip chip-accent chip-division-btn" id="divisionBtn">
+              <span id="currentDivisionName">División</span>
+              <span class="chev">▼</span>
+            </div>
+            <div class="division-dropdown hidden" id="divisionDropdown"></div>
+          </div>
+
+          <div class="season-selector" id="seasonSelector">
+            <div class="chip chip-season-btn" id="seasonBtn">
+              <span id="currentSeasonName">Temporada</span>
+              <span class="chev">▼</span>
+            </div>
+            <div class="season-dropdown hidden" id="seasonDropdown"></div>
+          </div>
+
+          <div class="chip chip-readonly" id="readOnlyChip" style="display:none">📖 MODO LECTURA</div>
+        </div>
+
+        <div class="topbar-right">
+          <div class="motto" id="brandMottoTop"></div>
+          <div class="chip" id="syncChip" style="font-size:10px;cursor:pointer;margin-left:12px;">SYNC</div>
+          <button class="btn btn-sm" id="btnPublishTopbar" style="margin-left:12px;">
+            <span id="publishTopbarIcon">☁</span> <span id="publishTopbarLabel">PUBLICAR</span>
+          </button>
+        </div>
+      </header>
+
+      <div class="view" id="view"></div>
+    </main>
   </div>
 
   <div id="modalRoot"></div>
-  <div id="toastRoot" class="toast-root"></div>
-</div>
-<script src="config.supabase.js"></script>
-<script type="module" src="js/app.js"></script>
+  <div class="toast-root" id="toastRoot"></div>
+
+  <script src="config.supabase.js"></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>
