@@ -1,6 +1,3 @@
-// ============================================================
-// SUPABASE SERVICE — CRUD + Realtime
-// ============================================================
 let _client = null;
 let _channel = null;
 
@@ -24,9 +21,6 @@ export function getSupabase() {
   return _client;
 }
 
-// ============================================================
-// DESCARGAR — Trae toda la DB de Supabase en formato local
-// ============================================================
 export async function downloadAll() {
   const sb = getSupabase();
 
@@ -73,7 +67,7 @@ export async function downloadAll() {
       coach: r.data?.coach || '',
       roster: r.data?.roster || [],
       trophies: r.data?.trophies || [],
-      money: r.data?.money || 0 // NUEVO
+      money: r.data?.money || 0 
     })),
     players: (players.data || []).map(r => ({
       id: r.id,
@@ -92,9 +86,13 @@ export async function downloadAll() {
       pigTrend: r.data?.pigTrend || '—',
       careerSnapshots: r.data?.careerSnapshots || [],
       trophies: r.data?.trophies || [],
-      priceHistory: r.data?.priceHistory || [], // NUEVO
+      priceHistory: r.data?.priceHistory || [],
       status: r.data?.status || 'owned',
       pendingTeamId: r.data?.pendingTeamId || null,
+      marketValue: r.data?.marketValue || null,
+      onLoan: r.data?.onLoan || false,
+      ownerTeamId: r.data?.ownerTeamId || null,
+      contractId: r.data?.contractId || null,
       seasonStats: r.data?.seasonStats || {
         goals:0, assists:0, saves:0, shots:0, pig:0,
         matchesPlayed:0, mvps:0, pigHistory:[], avgLast5PIG:0, avgPIGPerMatch:0
@@ -151,19 +149,17 @@ export async function downloadAll() {
       seasonEnd: configData.seasonEnd || { autoAssignTrophies:true, requireAllDivisions:true },
       ai: configData.ai || null,
       theme: configData.theme || null,
-      economy: configData.economy || null // NUEVO
+      economy: configData.economy || null 
     },
     widgets: configData.widgets || null,
     trophies: configData.trophies || {},
     transferLog: configData.transferLog || [],
     transferBannerBg: configData.transferBannerBg || '',
-    economyLedger: configData.economyLedger || [] // NUEVO
+    economyLedger: configData.economyLedger || [],
+    contracts: configData.contracts || [] // <-- AÑADIDO AQUÍ
   };
 }
 
-// ============================================================
-// SUBIR — Reemplaza tablas específicas
-// ============================================================
 export async function pushTables(tables) {
   const sb = getSupabase();
   const db = window.__zenithGetRawDB ? window.__zenithGetRawDB() : null;
@@ -216,9 +212,13 @@ export async function pushTables(tables) {
             pigTrend: p.pigTrend || '—',
             careerSnapshots: p.careerSnapshots || [],
             trophies: p.trophies || [],
-            priceHistory: p.priceHistory || [], // NUEVO
+            priceHistory: p.priceHistory || [],
             status: p.status || 'owned',
             pendingTeamId: p.pendingTeamId || null,
+            marketValue: p.marketValue || null,
+            onLoan: p.onLoan || false,
+            ownerTeamId: p.ownerTeamId || null,
+            contractId: p.contractId || null,
             seasonStats: p.seasonStats || {}
           }
         }));
@@ -273,12 +273,13 @@ export async function pushTables(tables) {
           seasonEnd: db.config?.seasonEnd || {},
           ai: db.config?.ai || {},
           theme: db.config?.theme || null,
-          economy: db.config?.economy || null, // NUEVO
+          economy: db.config?.economy || null, 
           widgets: db.widgets || [],
           trophies: db.trophies || {},
           transferLog: db.transferLog || [],
           transferBannerBg: db.transferBannerBg || '',
-          economyLedger: db.economyLedger || [] // NUEVO
+          economyLedger: db.economyLedger || [],
+          contracts: db.contracts || [] // <-- AÑADIDO AQUÍ
         };
         const { error: cfgErr } = await sb.from('config').upsert({ id: 1, data: cfgData });
         if (cfgErr) throw new Error('config: ' + cfgErr.message);
@@ -303,9 +304,6 @@ async function replaceTable(sb, tableName, rows, mapFn) {
   if (insErr) throw new Error(`insert: ${insErr.message}`);
 }
 
-// ============================================================
-// REALTIME — Suscripción a cambios
-// ============================================================
 export function subscribeRealtime(onChange) {
   const sb = getSupabase();
   if (_channel) sb.removeChannel(_channel);
@@ -328,9 +326,6 @@ export function unsubscribeRealtime() {
   if (_channel) { sb.removeChannel(_channel); _channel = null; }
 }
 
-// ============================================================
-// TEST
-// ============================================================
 export async function testConnection() {
   const sb = getSupabase();
   const { error } = await sb.from('seasons').select('id').limit(1);
