@@ -232,7 +232,7 @@ function migrate(db){
 
   db.players.forEach(normalizePlayer);
   db.teams.forEach(normalizeTeam);
-  db.coaches.forEach(normalizeCoach); // <-- NORMALIZAR COACHES
+  db.coaches.forEach(normalizeCoach);
   db.news.forEach(normalizeNews);
 
   db.matches.forEach(m => {
@@ -309,7 +309,7 @@ function migrateSnapshot(snapshot, liveDB){
 
   s.players.forEach(normalizePlayer);
   s.teams.forEach(normalizeTeam);
-  s.coaches.forEach(normalizeCoach); // <-- NORMALIZAR COACHES
+  s.coaches.forEach(normalizeCoach);
   s.news.forEach(normalizeNews);
   s.matches.forEach(m => {
     if(!m.format) m.format = 'BO3';
