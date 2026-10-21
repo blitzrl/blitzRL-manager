@@ -56,9 +56,6 @@ REGLAS GENERALES:
 - Devuelve SOLO el JSON, sin texto adicional.
 - Si detectas algún problema, inclúyelo en warnings.`;
 
-// ============================================================
-// PROMPTS PARA GENERADOR DE TORNEOS
-// ============================================================
 export const DEFAULT_TEAM_PROMPT_IMAGE = `Eres un analizador experto de listas de equipos de deportes.
 Extrae TODOS los nombres de equipos visibles en la imagen.
 
@@ -135,9 +132,6 @@ Reglas:
 4. Analiza colores, formas, texto dentro del escudo, animales/símbolos.
 5. Devuelve SOLO el JSON.`;
 
-// ============================================================
-// TEMA POR DEFECTO
-// ============================================================
 export function getDefaultTheme(){
   return {
     name: 'Zenith Default',
@@ -159,18 +153,14 @@ export function getDefaultTheme(){
   };
 }
 
-// ============================================================
-// ECONOMÍA POR DEFECTO (FASE 0)
-// ============================================================
 export const ECONOMY_DEFAULTS = {
   enabled: true,
-  allowDebt: true, // Si es false, no se permiten fichajes si el saldo es insuficiente
-  pigMultiplier: 1000, // 1 PIG = $1000
+  allowDebt: true, 
+  pigMultiplier: 1000, 
   pigAllowNegative: true,
-  pigNegativeFloor: -25, // Límite inferior de PIG negativo
-  missedShotsPenalty: 0.5, // Penalización por tiros fallados en el PIG negativo
+  pigNegativeFloor: -25, 
+  missedShotsPenalty: 0.5, 
   
-  // Precio base según rango y nivel (1, 2, 3)
   basePriceByRank: {
     'Bronze':         { 1: 3000,  2: 5000,  3: 8000 },
     'Silver':         { 1: 10000, 2: 13000, 3: 16000 },
@@ -179,22 +169,19 @@ export const ECONOMY_DEFAULTS = {
     'Diamond':        { 1: 22000, 2: 25000, 3: 28000 },
     'Champion':       { 1: 35000, 2: 38000, 3: 42000 },
     'Grand Champion': { 1: 45000, 2: 50000, 3: 55000 },
-    'SSL':            { 1: 65000, 2: 65000, 3: 65000 } // SSL no tiene divisiones
+    'SSL':            { 1: 65000, 2: 65000, 3: 65000 } 
   },
 
   bonuses: {
-    // Bonus por victoria
     winSimple:     { amount: 5000,  label: 'Victoria simple' },
     winHard:       { amount: 8000,  label: 'Victoria complicada' },
     winHumiliating:{ amount: 12000, label: 'Victoria humillante' },
     
-    // Bonus de temporada
     qualifyPlayoffs: { amount: 15000, label: 'Clasificar a Play-Offs' },
     passRound:       { amount: 10000, label: 'Pasar de ronda (Playoffs)' },
     winLeague:       { amount: 50000, label: 'Ganar la liga' },
     promote:         { amount: 30000, label: 'Ascenso de división' },
     
-    // Umbrales para detectar victoria humillante (Fase 4)
     thresholds: {
       BO3: { simpleMargin: 2, humiliatingGoalDiff: 4, humiliatingShutout: 2 },
       BO5: { simpleMargin: 3, humiliatingGoalDiff: 5, humiliatingShutout: 3 },
@@ -212,9 +199,6 @@ export const ECONOMY_DEFAULTS = {
   }
 };
 
-// ============================================================
-// WIDGETS POR DEFECTO
-// ============================================================
 export function getDefaultWidgets(){
   return [
     { id:'upcoming',        instanceId:'upcoming_default',         name:'Próximo Partido',       enabled:true,  order:1,  span:2, rowSpan:1, config:{ itemIds:[], interval:5 } },
@@ -293,7 +277,8 @@ export function defaultDatabase(){
     trophyHistory: [],
     trophies: {},
     transferBannerBg: '',
-    economyLedger: [], // NUEVO
+    economyLedger: [], 
+    contracts: [], // <-- AÑADIDO AQUÍ
 
     archivedSeasons: [],
     viewSeasonId: null,
@@ -303,7 +288,7 @@ export function defaultDatabase(){
       pigWeights: { goal: 2.0, assist: 1.5, save: 1.0, missDivisor: 5 },
       badStreak: { enabled: true, minGames: 5, consecutiveLosses: 3, penalty: 0.10 },
       seasonEnd: { autoAssignTrophies: true, requireAllDivisions: true },
-      economy: JSON.parse(JSON.stringify(ECONOMY_DEFAULTS)), // NUEVO
+      economy: JSON.parse(JSON.stringify(ECONOMY_DEFAULTS)), 
       ai: {
         provider: 'gemini',
         apiKey: '',
