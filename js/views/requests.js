@@ -1,6 +1,6 @@
 import { getDB, mutate } from '../services/storage.js';
 import { getSupabase } from '../services/supabase.js';
-import { toast, openModal, closeTopModal } from '../services/ui.js';
+import { toast } from '../services/ui.js';
 import { doTransferPlayer } from '../services/transfers.js';
 import { createContract } from '../services/contracts.js';
 
@@ -8,7 +8,6 @@ let _requests = [];
 let _loading = false;
 
 export function requestsView() {
-  // Lanzamos la carga asíncrona
   loadRequests();
 
   return `
@@ -38,15 +37,44 @@ async function loadRequests() {
   
   try {
     const sb = getSupabase();
-    // Traemos solicitudes que estén pending, accepted_by_target o pending_approval
+    // Buscamos las pendientes y las aceptadas por el otro coach
     const { data, error } = await sb.from('coach_requests')
       .select('*')
-      .in('status', ['pending', 'accepted_by_target', 'pending_approval'])
+      .in('status', ['pending', 'accepted_by_target'])
       .order('created_at', { ascending: false });
 
     if (error) throw error;
     
-    _requests = data || [];
+    // AUTO-EJECUCIÓN DE FICHAJES
+    // Si hay un fichaje aceptado por el coach, lo ejecutamos aquí mismo.
+    const acceptedTransfers = data.filter(r => r.type === 'transfer_offer' && r.status === 'accepted_by_target');
+    
+    for (const req of acceptedTransfers) {
+      const payload = req.payload;
+      try {
+        // Ejecutamos el traspaso real usando la función del Gestor
+        doTransferPlayer(payload.playerId, req.from_team_id, false, payload.price);
+        
+        // Marcamos la solicitud como completada en la BD
+        await sb.from('coach_requests').update({ 
+          status: 'approved_by_admin',
+          admin_response_at: new Date().toISOString(),
+          admin_response_note: 'Auto-aprobado por fichaje directo'
+        }).eq('id', req.id);
+        
+        toast(`💰 Fichaje automático: ${payload.playerName} transferido`, 'success');
+      } catch (err) {
+        console.error('Error auto-fichaje:', err);
+        toast('Error al ejecutar fichaje automático: ' + err.message, 'error');
+      }
+    }
+
+    // Filtramos la lista para mostrar solo lo que requiere tu atención
+    // (Pendientes, o Aceptados que NO son fichajes)
+    _requests = data.filter(r => {
+      if (r.type === 'transfer_offer' && r.status === 'accepted_by_target') return false; // Ya se ejecutó arriba
+      return true;
+    });
     
     if (countEl) countEl.textContent = `${_requests.length} pendientes`;
     
@@ -55,38 +83,8 @@ async function loadRequests() {
       return;
     }
 
-    // Renderizamos
     if (listEl) {
-      listEl.innerHTML = _requests.map(req => {
-        const payload = req.payload || {};
-        const typeLabel = req.type === 'transfer' ? 'FICHAJE' : req.type === 'loan_request' ? 'PRÉSTAMO' : 'CAMBIO DE CONTRATO';
-        const statusLabel = req.status === 'pending' ? 'PENDIENTE (COACH DESTINO)' : req.status === 'accepted_by_target' ? 'ACEPTADO POR DESTINO' : 'PENDIENTE APROBACIÓN';
-        const badgeClass = req.status === 'pending' ? 'badge-live' : req.status === 'accepted_by_target' ? 'badge-win' : 'badge-gold';
-        
-        return `
-          <div class="card" style="margin-bottom:10px; border-left:4px solid var(--accent)">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px">
-              <div>
-                <div style="font-size:14px; font-weight:600; color:var(--silver-light); margin-bottom:4px;">
-                  ${typeLabel} · ${req.from_team_id} → ${req.to_team_id || 'Agente Libre'}
-                </div>
-                <div style="font-size:12px; color:var(--muted);">
-                  Solicitado por: Coach ID ${req.from_coach_id} · ${new Date(req.created_at).toLocaleString()}
-                </div>
-                <div style="margin-top:8px; font-size:12.5px; color:var(--silver)">
-                  ${JSON.stringify(payload)}
-                </div>
-              </div>
-              <div style="display:flex; align-items:center; gap:8px">
-                <span class="badge ${badgeClass}">${statusLabel}</span>
-                <button class="btn btn-sm btn-primary" data-approve-req="${req.id}">✅ APROBAR</button>
-                <button class="btn btn-sm btn-danger" data-reject-req="${req.id}">❌ RECHAZAR</button>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('');
-      
+      listEl.innerHTML = _requests.map(req => renderRequestCard(req)).join('');
       bindRequestButtons();
     }
 
@@ -96,6 +94,63 @@ async function loadRequests() {
   } finally {
     _loading = false;
   }
+}
+
+function renderRequestCard(req) {
+  const payload = req.payload || {};
+  const db = getDB();
+  
+  const fromTeam = db.teams.find(t => t.id === req.from_team_id)?.name || 'Equipo Desconocido';
+  const toTeam = db.teams.find(t => t.id === req.to_team_id)?.name || 'Agente Libre';
+  const coach = db.coaches.find(c => c.id === req.from_coach_id)?.name || 'Coach Desconocido';
+  
+  let typeLabel = '';
+  let description = '';
+  
+  if (req.type === 'transfer_offer') {
+    typeLabel = '💰 OFERTA DE FICHAJE';
+    description = `El coach <b>${coach}</b> (${fromTeam}) quiere fichar a <b>${payload.playerName || 'Jugador'}</b> por <b>$${(payload.price || 0).toLocaleString('en-US')}</b>.`;
+  } else if (req.type === 'loan_request') {
+    typeLabel = '📤 SOLICITUD DE PRÉSTAMO';
+    description = `El coach <b>${coach}</b> (${fromTeam}) quiere a <b>${payload.playerName || 'Jugador'}</b> en préstamo por <b>${payload.durationMatchdays} jornadas</b>.`;
+  } else if (req.type === 'staff_transfer') {
+    typeLabel = '🧑‍💼 CONTRATO DE STAFF';
+    description = `El coach <b>${coach}</b> (${fromTeam}) quiere contratar a <b>${payload.coachName || 'Staff'}</b>.`;
+  } else {
+    typeLabel = '📄 CAMBIO DE CONTRATO';
+    description = `El coach <b>${coach}</b> solicita un cambio de contrato para <b>${payload.playerName || 'Jugador'}</b>.`;
+  }
+
+  const statusLabel = req.status === 'pending' ? 'PENDIENTE (ESPERANDO AL COACH)' : 'ACEPTADO POR EL COACH (REQUIERE TU APROBACIÓN)';
+  const badgeClass = req.status === 'pending' ? 'badge-live' : 'badge-win';
+
+  // Si está pendiente de aceptación del otro coach, no mostramos botones de Admin
+  const canAdminAct = req.status === 'accepted_by_target';
+
+  return `
+    <div class="card" style="margin-bottom:10px; border-left:4px solid ${req.status === 'accepted_by_target' ? 'var(--success)' : 'var(--accent)'}">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px">
+        <div>
+          <div style="font-size:14px; font-weight:600; color:var(--silver-light); margin-bottom:4px;">
+            ${typeLabel} · ${fromTeam} ${req.to_team_id ? '→ ' + toTeam : ''}
+          </div>
+          <div style="font-size:13px; color:var(--silver); margin:8px 0; background:var(--bg-graphite); padding:10px; border-radius:6px;">
+            ${description}
+          </div>
+          <div style="font-size:11px; color:var(--muted);">
+            Solicitado: ${new Date(req.created_at).toLocaleString()}
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="badge ${badgeClass}">${statusLabel}</span>
+          ${canAdminAct ? `
+            <button class="btn btn-sm btn-primary" data-approve-req="${req.id}">✅ APROBAR</button>
+            <button class="btn btn-sm btn-danger" data-reject-req="${req.id}">❌ RECHAZAR</button>
+          ` : ''}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 export function bindRequestsEvents() {
@@ -117,15 +172,7 @@ async function approveRequest(reqId) {
   const req = _requests.find(r => r.id === reqId);
   if (!req) return;
   
-  if (req.type === 'transfer') {
-    const { playerId, targetTeamId, price } = req.payload;
-    try {
-      doTransferPlayer(playerId, targetTeamId, false, price);
-      await updateRequestStatus(reqId, 'approved_by_admin', 'Aprobado y ejecutado por el admin');
-    } catch (e) {
-      toast(e.message, 'error');
-    }
-  } else if (req.type === 'loan_request') {
+  if (req.type === 'loan_request') {
     const payload = req.payload;
     try {
       createContract({
@@ -139,15 +186,18 @@ async function approveRequest(reqId) {
         chargeEvenIfNotPlayed: payload.chargeEvenIfNotPlayed ?? true,
         performanceEnabled: payload.performanceEnabled || false,
         performanceTargets: payload.performanceTargets || {},
-        buyOptionEnabled: payload.buyOptionEnabled || false,
-        buyPrice: payload.buyPrice || 0,
-        mandatoryBuy: payload.mandatoryBuy || false,
-        autoReturnOnElimination: payload.autoReturnOnElimination ?? true
+        buyOptionEnabled: false,
+        buyPrice: 0,
+        mandatoryBuy: false,
+        autoReturnOnElimination: true
       });
       await updateRequestStatus(reqId, 'approved_by_admin', 'Préstamo ejecutado por el admin');
     } catch (e) {
       toast(e.message, 'error');
     }
+  } else {
+    // Para otros tipos, solo actualizamos el estado
+    await updateRequestStatus(reqId, 'approved_by_admin', 'Aprobado por el administrador');
   }
 }
 
