@@ -65,6 +65,7 @@ export async function downloadAll() {
       tag: r.data?.tag || '',
       logo: r.data?.logo || '',
       coach: r.data?.coach || '',
+      assistant: r.data?.assistant || '',
       roster: r.data?.roster || [],
       trophies: r.data?.trophies || [],
       money: r.data?.money || 0 
@@ -149,14 +150,16 @@ export async function downloadAll() {
       seasonEnd: configData.seasonEnd || { autoAssignTrophies:true, requireAllDivisions:true },
       ai: configData.ai || null,
       theme: configData.theme || null,
-      economy: configData.economy || null 
+      economy: configData.economy || null,
+      marketSettings: configData.marketSettings || { open: true, allowTransfers: true, allowLoans: true }
     },
     widgets: configData.widgets || null,
     trophies: configData.trophies || {},
     transferLog: configData.transferLog || [],
     transferBannerBg: configData.transferBannerBg || '',
     economyLedger: configData.economyLedger || [],
-    contracts: configData.contracts || [] // <-- AÑADIDO AQUÍ
+    contracts: configData.contracts || [],
+    coaches: configData.coaches || [] // <-- NUEVO
   };
 }
 
@@ -185,7 +188,7 @@ export async function pushTables(tables) {
       else if (tableName === 'teams') {
         await replaceTable(sb, 'teams', db.teams || [], t => ({
           id: t.id, division_id: t.divisionId || null, season_id: t.seasonId || null, name: t.name || '',
-          data: { tag: t.tag || '', logo: t.logo || '', coach: t.coach || '', roster: t.roster || [], trophies: t.trophies || [], money: t.money || 0 }
+          data: { tag: t.tag || '', logo: t.logo || '', coach: t.coach || '', assistant: t.assistant || '', roster: t.roster || [], trophies: t.trophies || [], money: t.money || 0 }
         }));
         results.stats.teams = (db.teams || []).length;
       }
@@ -274,12 +277,14 @@ export async function pushTables(tables) {
           ai: db.config?.ai || {},
           theme: db.config?.theme || null,
           economy: db.config?.economy || null, 
+          marketSettings: db.config?.marketSettings || {},
           widgets: db.widgets || [],
           trophies: db.trophies || {},
           transferLog: db.transferLog || [],
           transferBannerBg: db.transferBannerBg || '',
           economyLedger: db.economyLedger || [],
-          contracts: db.contracts || [] // <-- AÑADIDO AQUÍ
+          contracts: db.contracts || [],
+          coaches: db.coaches || [] // <-- NUEVO
         };
         const { error: cfgErr } = await sb.from('config').upsert({ id: 1, data: cfgData });
         if (cfgErr) throw new Error('config: ' + cfgErr.message);
