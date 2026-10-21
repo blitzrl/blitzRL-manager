@@ -7,6 +7,7 @@ import { NATIONS, RANKS, PLATFORMS, RANK_LEVELS, RANK_DIVISIONS, getNationFlag, 
 import { openRowActions, openTransferModal } from '../services/transfers.js';
 import { renderVitrina } from '../services/trophies.js';
 import { recordTransaction, getTeamSquadValue } from '../services/economy.js';
+import { openLoanModal } from './loanModal.js'; // <-- IMPORTACIÓN AÑADIDA
 
 let _searchQuery = '';
 
@@ -32,7 +33,6 @@ export function teamsView(){
       ${teams.map(t => teamCard(t)).join('') || '<div class="card">Sin equipos registrados.</div>'}
     </div>
 
-    <!-- FIX: CUADRO DE AGENTES LIBRES MOVIDO ABAJO -->
     ${freeAgents.length > 0 ? `
       <div class="card" style="margin-top:24px; border-left:3px solid var(--gold);" data-searchable="agentes libres ${freeAgents.map(p => p.name).join(' ').toLowerCase()}">
         <div class="card-header">
@@ -138,10 +138,9 @@ export function bindTeamsEvents(){
       }
     })));
   
-  // FIX: Hacer clickeables a los jugadores en las tarjetas de equipo y agentes libres
   document.querySelectorAll('[data-open-player]').forEach(row => {
     row.addEventListener('click', (e) => {
-      if(e.target.closest('button')) return; // Evitar que el botón Fichar dispare esto
+      if(e.target.closest('button')) return; 
       const pid = row.dataset.openPlayer;
       if(pid) location.hash = '#/players/' + pid;
     });
@@ -162,9 +161,9 @@ export function bindTeamsEvents(){
       cards.forEach(card => {
         const text = card.dataset.searchable;
         if (text.includes(_searchQuery)) {
-          card.style.display = ''; // Mostrar
+          card.style.display = ''; 
         } else {
-          card.style.display = 'none'; // Ocultar
+          card.style.display = 'none'; 
         }
       });
     });
@@ -357,9 +356,11 @@ export function openPlayerForm(playerId=null, onSaved=null){
     ${NATIONS.map(n => `<option value="${n.code}" ${player?.nationalityCode===n.code?'selected':''}>${n.flag} ${n.name}</option>`).join('')}
   `;
 
+  // <-- AÑADIDO BOTÓN DE PRÉSTAMO AQUÍ -->
   const extraButtons = player ? `
     <div class="player-form-actions">
       <button type="button" class="btn btn-sm" id="pfTransfer">🔄 TRANSFERIR</button>
+      <button type="button" class="btn btn-sm" id="pfLoan">📤 PRÉSTAMO</button>
       <button type="button" class="btn btn-sm" id="pfFree">🆓 AGENTE LIBRE</button>
       <button type="button" class="btn btn-sm btn-danger" id="pfDelete">🗑 ELIMINAR</button>
     </div>
@@ -437,6 +438,13 @@ export function openPlayerForm(playerId=null, onSaved=null){
 
       if(player){
         const importLazy = async () => await import('../services/transfers.js');
+        
+        // <-- BOTÓN DE PRÉSTAMO AÑADIDO AQUÍ -->
+        root.querySelector('#pfLoan')?.addEventListener('click', () => {
+          closeTopModal();
+          setTimeout(() => openLoanModal(player.id), 100);
+        });
+
         root.querySelector('#pfTransfer')?.addEventListener('click', async () => {
           closeTopModal();
           setTimeout(async () => {
