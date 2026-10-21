@@ -4,7 +4,6 @@ import { openModal, closeTopModal, closeAllModals, toast } from './ui.js';
 import { calculatePlayerPrice, recordTransaction } from './economy.js';
 import { aggregatePlayerStats } from './statistics.js';
 
-// ---------- HELPERS ----------
 export function getPlayerCurrentTeam(playerId){
   const db = getDB();
   return db.teams.find(t => (t.roster || []).some(r => r.playerId === playerId)) || null;
@@ -23,7 +22,6 @@ export function canTeamReceive(teamId){
   return getTeamRosterCount(teamId) < getMaxRoster();
 }
 
-// ---------- ACCIONES ----------
 export function doDeletePlayer(playerId){
   try {
     const db = getDB();
@@ -57,7 +55,6 @@ export function doFreeAgent(playerId){
       if(!pl) return;
       const ft = fromTeam ? d.teams.find(t => t.id === fromTeam.id) : null;
 
-      // Historial de carrera
       if (ft) {
         pl.history = pl.history || [];
         pl.history.unshift({
@@ -87,7 +84,6 @@ export function doFreeAgent(playerId){
       pl.status = 'free_agent';
       pl.divisionId = null;
       pl.pendingTeamId = null;
-      // NO tocamos pl.marketValue, se mantiene.
 
       d.transferLog.push({
         id: uid('mov'), playerId, playerName: pl.name,
@@ -136,7 +132,6 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset, customPrice
       const ft = fromTeam ? d.teams.find(t => t.id === fromTeam.id) : null;
       if (!pl || !tt) return;
 
-      // Historial de carrera detallado
       pl.history = pl.history || [];
       pl.history.unshift({
         seasonName: d.seasons.find(s=>s.active)?.name || 'Actual',
@@ -164,8 +159,6 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset, customPrice
       if (ft) ft.roster = (ft.roster || []).filter(r => r.playerId !== playerId);
 
       pl.divisionId = targetTeam.divisionId;
-      
-      // FIX: El precio de la transacción actualiza el valor base del jugador
       pl.marketValue = price;
 
       if (goesPending){
@@ -210,7 +203,6 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset, customPrice
   }
 }
 
-// ---------- MODALES ----------
 export function openTransferModal(playerId){
   const db = getDB();
   const player = db.players.find(p => p.id === playerId);
@@ -332,6 +324,7 @@ export function openRowActions(playerId){
         Equipo actual: <strong style="color:var(--silver-light)">${esc(currentTeam?.name || 'Agente Libre')}</strong>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
+        <button type="button" class="btn" data-act="loan">📤 PRÉSTAMO</button> <!-- AÑADIDO -->
         <button type="button" class="btn" data-act="transfer">🔄 Transferir a otro club</button>
         <button type="button" class="btn" data-act="free">🆓 Convertir en agente libre</button>
         <button type="button" class="btn btn-danger" data-act="delete">🗑 Eliminar del programa</button>
@@ -339,6 +332,11 @@ export function openRowActions(playerId){
     `,
     footer: `<button class="btn btn-ghost" data-close>CANCELAR</button>`,
     onMount: root => {
+      root.querySelector('[data-act="loan"]').addEventListener('click', async () => { // AÑADIDO
+        closeTopModal();
+        const { openLoanModal } = await import('../views/loanModal.js');
+        setTimeout(() => openLoanModal(playerId), 100);
+      });
       root.querySelector('[data-act="transfer"]').addEventListener('click', () => {
         closeTopModal();
         setTimeout(() => openTransferModal(playerId), 100);
