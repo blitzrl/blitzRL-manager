@@ -89,7 +89,6 @@ function renderAccountsList() {
             <button class="btn btn-sm ${acc.active ? 'btn-danger' : 'btn-primary'}" data-toggle-acc="${acc.id}" data-active="${acc.active}">
               ${acc.active ? 'SUSPENDER' : 'ACTIVAR'}
             </button>
-            <!-- NUEVO BOTÓN DE ELIMINAR -->
             <button class="btn btn-sm btn-danger" data-delete-acc="${acc.id}" title="Eliminar cuenta">🗑 ELIMINAR</button>
           </div>
         </div>
@@ -130,15 +129,25 @@ function bindAccountButtons() {
     });
   });
 
-  // NUEVO EVENTO PARA ELIMINAR CUENTA
   document.querySelectorAll('[data-delete-acc]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('¿Eliminar permanentemente esta cuenta? El coach perderá acceso al portal.')) return;
+      if (!confirm('¿Eliminar permanentemente esta cuenta? El coach será expulsado inmediatamente.')) return;
+      
+      const accId = btn.dataset.deleteAcc;
+      const acc = _accounts.find(a => a.id === accId);
       
       try {
         const sb = getSupabase();
-        await sb.from('coach_accounts').delete().eq('id', btn.dataset.deleteAcc);
-        toast('Cuenta eliminada', 'success');
+        
+        // ELIMINAR SESIONES ACTIVAS PRIMERO (Expulsión instantánea)
+        if (acc) {
+          await sb.from('coach_sessions').delete().eq('coach_id', acc.coach_id);
+        }
+
+        // ELIMINAR LA CUENTA
+        await sb.from('coach_accounts').delete().eq('id', accId);
+        
+        toast('Cuenta y sesiones eliminadas', 'success');
         _accounts = null;
         loadAccounts();
       } catch (e) {
