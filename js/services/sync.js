@@ -8,6 +8,7 @@ const TABLE_TO_KEY = {
   divisions: 'divisions',
   teams: 'teams',
   players: 'players',
+  coaches: 'coaches', // <-- NUEVO
   matches: 'matches',
   playoffs: 'playoffs',
   news: 'news',
