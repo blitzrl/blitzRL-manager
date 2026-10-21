@@ -8,6 +8,7 @@ import { swapTeamsInMatchday } from '../services/schedule.js';
 import { openMatchSummary } from './matchSummary.js';
 import { applyMatchBonuses, detectVictoryType, calculatePlayerPrice } from '../services/economy.js';
 import { aggregatePlayerStats } from '../services/statistics.js';
+import { processContractMatchday } from '../services/contracts.js'; // <-- AÑADIDO
 
 export function matchesView(){
   const db = getDB();
@@ -518,6 +519,7 @@ function renderNewGame(container, m, A, B, activeRoster){
       if (updatedM && updatedM.status === 'finished') {
         applyMatchBonuses(m.id);
         updatePlayerPriceHistory(m.id);
+        processContractMatchday(updatedM); // <-- AÑADIDO AQUÍ
       }
     }, 100);
 
@@ -844,6 +846,7 @@ function renderAI(container, m, A, B){
       if (updatedM && updatedM.status === 'finished') {
         applyMatchBonuses(m.id);
         updatePlayerPriceHistory(m.id);
+        processContractMatchday(updatedM); // <-- AÑADIDO AQUÍ
       }
     }, 100);
 
