@@ -50,21 +50,17 @@ async function loadRequests() {
     for (const req of acceptedTransfers) {
       const payload = req.payload;
       try {
-        // 1. Ejecutar traspaso real
         doTransferPlayer(payload.playerId, req.from_team_id, false, payload.price);
         
-        // 2. Marcar como completada en la BD
         await sb.from('coach_requests').update({ 
           status: 'approved_by_admin',
           admin_response_at: new Date().toISOString(),
           admin_response_note: 'Auto-aprobado por fichaje directo'
         }).eq('id', req.id);
 
-        // 3. Notificar al coach vendedor
-        const toCoachId = req.to_coach_id;
-        if (toCoachId) {
+        if (req.to_coach_id) {
           await sb.from('coach_notifications').insert({
-            coach_id: toCoachId,
+            coach_id: req.to_coach_id,
             type: 'transfer_completed',
             title: '✅ Fichaje Aceptado',
             body: `Tu oferta por ${payload.playerName} por $${(payload.price || 0).toLocaleString('en-US')} ha sido aceptada.`,
@@ -199,20 +195,22 @@ async function approveRequest(reqId) {
         mandatoryBuy: false,
         autoReturnOnElimination: true
       });
-      await updateRequestStatus(reqId, 'approved_by_admin', 'Préstamo ejecutado por el admin');
+      await updateRequestStatus(reqId, 'approved_by_admin', 'Préstamo ejecutado por el admin', req.from_coach_id, '✅ Préstamo Aprobado', `Tu solicitud de préstamo por ${payload.playerName} ha sido aprobada por el Admin.`);
     } catch (e) {
       toast(e.message, 'error');
     }
   } else {
-    await updateRequestStatus(reqId, 'approved_by_admin', 'Aprobado por el administrador');
+    await updateRequestStatus(reqId, 'approved_by_admin', 'Aprobado por el administrador', req.from_coach_id, '✅ Solicitud Aprobada', 'Tu solicitud ha sido aprobada por el administrador.');
   }
 }
 
 async function rejectRequest(reqId) {
-  await updateRequestStatus(reqId, 'rejected_by_admin', 'Rechazado por el administrador');
+  const req = _requests.find(r => r.id === reqId);
+  if (!req) return;
+  await updateRequestStatus(reqId, 'rejected_by_admin', 'Rechazado por el administrador', req.from_coach_id, '❌ Solicitud Rechazada', 'Tu solicitud ha sido rechazada por el administrador.');
 }
 
-async function updateRequestStatus(reqId, status, note) {
+async function updateRequestStatus(reqId, status, note, coachIdToNotify, notifTitle, notifBody) {
   try {
     const sb = getSupabase();
     const { error } = await sb.from('coach_requests').update({ 
@@ -222,6 +220,18 @@ async function updateRequestStatus(reqId, status, note) {
     }).eq('id', reqId);
     
     if (error) throw error;
+
+    // Notificar al coach
+    if (coachIdToNotify) {
+      await sb.from('coach_notifications').insert({
+        coach_id: coachIdToNotify,
+        type: 'request_response',
+        title: notifTitle,
+        body: notifBody,
+        link_type: 'none',
+        priority: 'normal'
+      });
+    }
     
     toast('Solicitud procesada', 'success');
     loadRequests();
