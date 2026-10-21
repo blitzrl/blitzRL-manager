@@ -74,10 +74,26 @@ function normalizeTeam(t){
   if(t.tag === undefined)  t.tag = '';
   if(t.logo === undefined) t.logo = '';
   if(t.coach === undefined) t.coach = '';
-  if(t.assistant === undefined) t.assistant = ''; // <-- NUEVO
+  if(t.assistant === undefined) t.assistant = ''; 
   if(t.divisionId === undefined) t.divisionId = null;
   if(t.seasonId === undefined)   t.seasonId = null;
   if(t.money === undefined)      t.money = 0; 
+}
+
+function normalizeCoach(c){
+  if(!c || typeof c !== 'object') return;
+  if(!c.socials) c.socials = {};
+  if(c.socials.twitter === undefined) c.socials.twitter = '';
+  if(c.socials.twitch === undefined) c.socials.twitch = '';
+  if(c.socials.youtube === undefined) c.socials.youtube = '';
+  if(c.socials.instagram === undefined) c.socials.instagram = '';
+  if(c.socials.discord === undefined) c.socials.discord = '';
+  if(!Array.isArray(c.customLinks)) c.customLinks = [];
+  if(!Array.isArray(c.history)) c.history = [];
+  if(!Array.isArray(c.trophies)) c.trophies = [];
+  if(c.profilePicture === undefined) c.profilePicture = '';
+  if(c.nationalityCode === undefined) c.nationalityCode = '';
+  if(c.rlTracker === undefined) c.rlTracker = '';
 }
 
 function normalizeNews(n){
@@ -168,7 +184,7 @@ function migrate(db){
   db.divisions  ||= [];
   db.teams      ||= [];
   db.players    ||= [];
-  db.coaches    ||= []; // <-- NUEVO
+  db.coaches    ||= []; 
   db.matches    ||= [];
   db.playoffs   ||= [];
   db.news       ||= [];
@@ -190,7 +206,7 @@ function migrate(db){
   db.config.pigWeights  ||= { goal:2.0, assist:1.5, save:1.0, missDivisor:5 };
   db.config.badStreak   ||= { enabled:true, minGames:5, consecutiveLosses:3, penalty:0.10 };
   db.config.seasonEnd   ||= { autoAssignTrophies:true, requireAllDivisions:true };
-  db.config.marketSettings ||= { open: true, allowTransfers: true, allowLoans: true }; // <-- NUEVO
+  db.config.marketSettings ||= { open: true, allowTransfers: true, allowLoans: true }; 
   
   if (!db.config.economy) {
     db.config.economy = JSON.parse(JSON.stringify(ECONOMY_DEFAULTS));
@@ -216,6 +232,7 @@ function migrate(db){
 
   db.players.forEach(normalizePlayer);
   db.teams.forEach(normalizeTeam);
+  db.coaches.forEach(normalizeCoach); // <-- NORMALIZAR COACHES
   db.news.forEach(normalizeNews);
 
   db.matches.forEach(m => {
@@ -264,7 +281,7 @@ function migrateSnapshot(snapshot, liveDB){
   s.divisions ||= [];
   s.teams ||= [];
   s.players ||= [];
-  s.coaches ||= []; // <-- NUEVO
+  s.coaches ||= []; 
   s.matches ||= [];
   s.playoffs ||= [];
   s.news ||= [];
@@ -280,7 +297,7 @@ function migrateSnapshot(snapshot, liveDB){
   s.config ||= JSON.parse(JSON.stringify(liveDB.config));
   if(!s.config.seasonEnd) s.config.seasonEnd = { autoAssignTrophies:true, requireAllDivisions:true };
   if(!s.config.ai) s.config.ai = JSON.parse(JSON.stringify(liveDB.config.ai));
-  if(!s.config.marketSettings) s.config.marketSettings = { open: true, allowTransfers: true, allowLoans: true }; // <-- NUEVO
+  if(!s.config.marketSettings) s.config.marketSettings = { open: true, allowTransfers: true, allowLoans: true }; 
   
   s.config.theme = JSON.parse(JSON.stringify(liveDB.config.theme || { active: getDefaultTheme(), presets: [] }));
   s.config.economy = JSON.parse(JSON.stringify(liveDB.config.economy || ECONOMY_DEFAULTS));
@@ -292,6 +309,7 @@ function migrateSnapshot(snapshot, liveDB){
 
   s.players.forEach(normalizePlayer);
   s.teams.forEach(normalizeTeam);
+  s.coaches.forEach(normalizeCoach); // <-- NORMALIZAR COACHES
   s.news.forEach(normalizeNews);
   s.matches.forEach(m => {
     if(!m.format) m.format = 'BO3';
