@@ -3,34 +3,27 @@ import { getSupabase } from '../services/supabase.js';
 import { toast, openModal, closeTopModal } from '../services/ui.js';
 
 export function warningsView() {
-  const db = getDB();
-  const coaches = db.coaches || [];
-
   return `
     <div class="page-head">
-      <h1 class="page-title">ADVERTENCIAS A COACHES</h1>
-      <button class="btn btn-primary" id="btnNewWarning">+ NUEVA ADVERTENCIA</button>
+      <h1 class="page-title">ADVERTENCIAS Y NOTIFICACIONES</h1>
+      <button class="btn btn-primary" id="btnNewWarning">+ NUEVO MENSAJE</button>
     </div>
 
     <div class="card">
       <div class="card-header">
-        <div class="card-title"><span class="dot">◆</span>HISTORIAL DE ADVERTENCIAS</div>
+        <div class="card-title"><span class="dot">◆</span>HISTORIAL</div>
       </div>
       <div id="warningsList">
-        <div style="text-align:center;padding:20px;color:var(--muted)">Cargando advertencias de Supabase...</div>
+        <div style="text-align:center;padding:20px;color:var(--muted)">Cargando...</div>
       </div>
     </div>
   `;
 }
 
 export function bindWarningsEvents() {
-  const db = getDB();
-  const coaches = db.coaches || [];
-
   document.getElementById('btnNewWarning')?.addEventListener('click', () => {
-    openWarningModal(coaches);
+    openWarningModal();
   });
-
   loadWarnings();
 }
 
@@ -40,10 +33,7 @@ async function loadWarnings() {
 
   try {
     const sb = getSupabase();
-    const { data, error } = await sb.from('coach_warnings')
-      .select('*')
-      .order('created_at', { ascending: false });
-
+    const { data, error } = await sb.from('coach_warnings').select('*').order('created_at', { ascending: false });
     if (error) throw error;
     
     if (!data || data.length === 0) {
@@ -52,52 +42,52 @@ async function loadWarnings() {
     }
 
     const db = getDB();
-    
     listEl.innerHTML = data.map(w => {
       const coach = db.coaches.find(c => c.id === w.coach_id);
       const coachName = coach ? coach.name : w.coach_id;
       
       const status = w.acknowledged_at ? '✅ Respondida' : '🟡 Pendiente';
-      const severityClass = w.severity === 'critical' ? 'var(--danger)' : w.severity === 'warning' ? 'var(--gold)' : 'var(--accent)';
+      
+      let severityClass = 'var(--accent)'; // Azul por defecto (Info)
+      let severityLabel = 'INFO';
+      if (w.severity === 'critical') { severityClass = 'var(--danger)'; severityLabel = 'CRÍTICO'; }
+      else if (w.severity === 'warning') { severityClass = 'var(--gold)'; severityLabel = 'AVISO'; }
 
       return `
         <div class="card" style="margin-bottom:10px; border-left:4px solid ${severityClass}">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px">
             <div>
               <div style="font-size:14px; font-weight:600; color:var(--silver-light); margin-bottom:4px;">
-                Coach: ${coachName} (${w.severity.toUpperCase()})
+                Coach: ${coachName} (${severityLabel})
               </div>
               <div style="font-size:13px; color:var(--silver); margin-bottom:8px; padding:8px; background:var(--bg-graphite); border-radius:6px;">
                 "${w.message}"
               </div>
               <div style="font-size:11px; color:var(--muted);">
                 Enviada: ${new Date(w.created_at).toLocaleString()}
-                ${w.acknowledged_at ? ` · Respondida el ${new Date(w.acknowledged_at).toLocaleString()}` : ''}
               </div>
               ${w.acknowledgment_message ? `
                 <div style="margin-top:8px; font-size:12px; color:var(--success);">
-                  <b>Respuesta del coach:</b> "${w.acknowledgment_message}"
+                  <b>Respuesta:</b> "${w.acknowledgment_message}"
                 </div>
               ` : ''}
             </div>
             <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
               <span class="badge">${status}</span>
-              <!-- NUEVO BOTÓN DE ELIMINAR -->
-              <button class="btn btn-sm btn-danger" data-del-warning="${w.id}" title="Eliminar advertencia">🗑 ELIMINAR</button>
+              <button class="btn btn-sm btn-danger" data-del-warning="${w.id}">🗑 ELIMINAR</button>
             </div>
           </div>
         </div>
       `;
     }).join('');
 
-    // Listener para el botón eliminar
     listEl.querySelectorAll('[data-del-warning]').forEach(btn => {
       btn.addEventListener('click', async () => {
-        if (!confirm('¿Eliminar esta advertencia permanentemente?')) return;
+        if (!confirm('¿Eliminar este mensaje permanentemente?')) return;
         try {
           const sb = getSupabase();
           await sb.from('coach_warnings').delete().eq('id', btn.dataset.delWarning);
-          toast('Advertencia eliminada', 'success');
+          toast('Mensaje eliminado', 'success');
           loadWarnings();
         } catch (e) {
           toast('Error al eliminar: ' + e.message, 'error');
@@ -106,75 +96,101 @@ async function loadWarnings() {
     });
 
   } catch (err) {
-    console.error('[WARNINGS] Error al cargar:', err);
     listEl.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger)">Error: ${err.message}</div>`;
   }
 }
 
-function openWarningModal(coaches) {
+function openWarningModal() {
+  const db = getDB();
+  const coaches = db.coaches || [];
+
   openModal({
     id: 'new-warning-modal',
-    title: 'NUEVA ADVERTENCIA',
+    title: 'NUEVO MENSAJE A COACHES',
+    wide: true,
     body: `
       <div class="field">
-        <label>Coach Destinatario</label>
-        <select class="select" id="warn-coach">
-          <option value="">— Seleccionar Coach —</option>
-          ${coaches.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
-        </select>
+        <label>Destinatarios</label>
+        <div style="margin-bottom:8px;">
+          <button type="button" class="btn btn-sm" id="btnSelectAll">Seleccionar Todos</button>
+        </div>
+        <div style="max-height:150px; overflow-y:auto; border:1px solid var(--border-soft); border-radius:6px; padding:10px; background:var(--bg-graphite);">
+          ${coaches.map(c => `
+            <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px; cursor:pointer;">
+              <input type="checkbox" class="chk-coach" value="${c.id}"> ${c.name}
+            </label>
+          `).join('')}
+        </div>
       </div>
       <div class="field">
         <label>Severidad</label>
         <select class="select" id="warn-severity">
-          <option value="info">Info (Azul)</option>
-          <option value="warning" selected>Aviso (Amarillo)</option>
-          <option value="critical">Crítico (Rojo)</option>
+          <option value="info">Info (Azul) - Solo información</option>
+          <option value="warning" selected>Aviso (Amarillo) - Requiere atención</option>
+          <option value="critical">Crítico (Rojo) - Sanción o problema grave</option>
         </select>
       </div>
       <div class="field">
         <label>Mensaje</label>
-        <textarea class="textarea" id="warn-message" rows="4" placeholder="Escribe el motivo de la advertencia..."></textarea>
+        <textarea class="textarea" id="warn-message" rows="4" placeholder="Escribe el mensaje..."></textarea>
       </div>
     `,
     footer: `
       <button class="btn btn-ghost" data-close>CANCELAR</button>
-      <button class="btn btn-primary" id="saveWarningBtn">ENVIAR ADVERTENCIA</button>
+      <button class="btn btn-primary" id="saveWarningBtn">ENVIAR MENSAJE</button>
     `,
-    onMount: root => {
+    onMount: (root) => {
+      root.querySelector('#btnSelectAll').addEventListener('click', () => {
+        const checkboxes = root.querySelectorAll('.chk-coach');
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        checkboxes.forEach(cb => cb.checked = !allChecked);
+      });
+
       root.querySelector('#saveWarningBtn').addEventListener('click', async () => {
-        const coachId = root.querySelector('#warn-coach').value;
+        const selectedCoaches = Array.from(root.querySelectorAll('.chk-coach:checked')).map(cb => cb.value);
         const severity = root.querySelector('#warn-severity').value;
         const message = root.querySelector('#warn-message').value.trim();
 
-        if (!coachId || !message) return toast('Faltan campos obligatorios', 'error');
+        if (selectedCoaches.length === 0) return toast('Selecciona al menos un coach', 'error');
+        if (!message) return toast('El mensaje no puede estar vacío', 'error');
 
         try {
+          const btn = root.querySelector('#saveWarningBtn');
+          btn.disabled = true; btn.textContent = 'ENVIANDO...';
           const sb = getSupabase();
           
-          const { error: wErr } = await sb.from('coach_warnings').insert({
-            coach_id: coachId,
-            message,
-            severity,
-            created_by: 'Admin'
-          });
-          if (wErr) throw wErr;
+          for (const coachId of selectedCoaches) {
+            // 1. Insertar Advertencia
+            const { data: warnData, error: wErr } = await sb.from('coach_warnings').insert({
+              coach_id: coachId,
+              message,
+              severity,
+              created_by: 'Admin'
+            }).select('id').single();
+            
+            if (wErr) throw wErr;
 
-          const { error: nErr } = await sb.from('coach_notifications').insert({
-            coach_id: coachId,
-            type: 'admin_warning',
-            title: 'Advertencia del Administrador',
-            body: message,
-            link_type: 'warning',
-            priority: severity === 'critical' ? 'urgent' : 'high'
-          });
-          if (nErr) throw nErr;
+            // 2. Insertar Notificación
+            const { error: nErr } = await sb.from('coach_notifications').insert({
+              coach_id: coachId,
+              type: 'admin_warning',
+              title: severity === 'info' ? 'ℹ️ Información del Admin' : severity === 'warning' ? '⚠️ Aviso del Admin' : '🔴 Advertencia Crítica',
+              body: message,
+              link_type: 'warning',
+              link_id: warnData.id,
+              priority: severity === 'critical' ? 'urgent' : 'high'
+            });
+            if (nErr) throw nErr;
+          }
 
-          toast('Advertencia enviada', 'success');
+          toast('Mensajes enviados exitosamente', 'success');
           closeTopModal();
           loadWarnings();
         } catch (e) {
           console.error(e);
           toast('Error al enviar: ' + e.message, 'error');
+          root.querySelector('#saveWarningBtn').disabled = false;
+          root.querySelector('#saveWarningBtn').textContent = 'ENVIAR MENSAJE';
         }
       });
     }
