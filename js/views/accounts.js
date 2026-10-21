@@ -2,7 +2,7 @@ import { getDB } from '../services/storage.js';
 import { getSupabase } from '../services/supabase.js';
 import { toast, openModal, closeTopModal } from '../services/ui.js';
 
-let _accounts = null; // Null significa que no ha cargado nunca
+let _accounts = null;
 let _loading = false;
 
 export function accountsView() {
@@ -85,10 +85,12 @@ function renderAccountsList() {
             </div>
           </div>
           <div style="display:flex; gap:8px;">
-            <button class="btn btn-sm" data-reset-pass="${acc.id}" data-username="${acc.username}">RESETEAR CONTRASEÑA</button>
+            <button class="btn btn-sm" data-reset-pass="${acc.id}" data-username="${acc.username}">RESETEAR PASS</button>
             <button class="btn btn-sm ${acc.active ? 'btn-danger' : 'btn-primary'}" data-toggle-acc="${acc.id}" data-active="${acc.active}">
               ${acc.active ? 'SUSPENDER' : 'ACTIVAR'}
             </button>
+            <!-- NUEVO BOTÓN DE ELIMINAR -->
+            <button class="btn btn-sm btn-danger" data-delete-acc="${acc.id}" title="Eliminar cuenta">🗑 ELIMINAR</button>
           </div>
         </div>
       </div>
@@ -120,9 +122,27 @@ function bindAccountButtons() {
         const sb = getSupabase();
         await sb.from('coach_accounts').update({ active: !active }).eq('id', id);
         toast(`Cuenta ${!active ? 'activada' : 'suspendida'}`, 'success');
+        _accounts = null;
         loadAccounts();
       } catch (e) {
         toast('Error: ' + e.message, 'error');
+      }
+    });
+  });
+
+  // NUEVO EVENTO PARA ELIMINAR CUENTA
+  document.querySelectorAll('[data-delete-acc]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('¿Eliminar permanentemente esta cuenta? El coach perderá acceso al portal.')) return;
+      
+      try {
+        const sb = getSupabase();
+        await sb.from('coach_accounts').delete().eq('id', btn.dataset.deleteAcc);
+        toast('Cuenta eliminada', 'success');
+        _accounts = null;
+        loadAccounts();
+      } catch (e) {
+        toast('Error al eliminar: ' + e.message, 'error');
       }
     });
   });
@@ -184,7 +204,7 @@ function openNewAccountModal() {
 
           toast('Cuenta creada exitosamente', 'success');
           closeTopModal();
-          _accounts = null; // Forzar recarga
+          _accounts = null;
           loadAccounts();
         } catch (e) {
           console.error(e);
