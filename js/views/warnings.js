@@ -48,7 +48,7 @@ async function loadWarnings() {
       
       const status = w.acknowledged_at ? '✅ Respondida' : '🟡 Pendiente';
       
-      let severityClass = 'var(--accent)'; // Azul por defecto (Info)
+      let severityClass = 'var(--accent)'; 
       let severityLabel = 'INFO';
       if (w.severity === 'critical') { severityClass = 'var(--danger)'; severityLabel = 'CRÍTICO'; }
       else if (w.severity === 'warning') { severityClass = 'var(--gold)'; severityLabel = 'AVISO'; }
@@ -125,9 +125,9 @@ function openWarningModal() {
       <div class="field">
         <label>Severidad</label>
         <select class="select" id="warn-severity">
-          <option value="info">Info (Azul) - Solo información</option>
-          <option value="warning" selected>Aviso (Amarillo) - Requiere atención</option>
-          <option value="critical">Crítico (Rojo) - Sanción o problema grave</option>
+          <option value="info">Información (Azul)</option>
+          <option value="warning" selected>Advertencia (Amarillo)</option>
+          <option value="critical">Crítica (Rojo)</option>
         </select>
       </div>
       <div class="field">
@@ -159,8 +159,13 @@ function openWarningModal() {
           btn.disabled = true; btn.textContent = 'ENVIANDO...';
           const sb = getSupabase();
           
+          // TÍTULOS EXACTOS QUE EL PORTAL LEERÁ PARA PINTAR LOS COLORES
+          let titleStr = '';
+          if (severity === 'info') titleStr = 'INFORMACIÓN DEL ADMINISTRADOR';
+          else if (severity === 'warning') titleStr = 'ADVERTENCIA DEL ADMINISTRADOR';
+          else if (severity === 'critical') titleStr = 'ADVERTENCIA CRÍTICA DEL ADMINISTRADOR';
+
           for (const coachId of selectedCoaches) {
-            // 1. Insertar Advertencia
             const { data: warnData, error: wErr } = await sb.from('coach_warnings').insert({
               coach_id: coachId,
               message,
@@ -170,11 +175,10 @@ function openWarningModal() {
             
             if (wErr) throw wErr;
 
-            // 2. Insertar Notificación
             const { error: nErr } = await sb.from('coach_notifications').insert({
               coach_id: coachId,
               type: 'admin_warning',
-              title: severity === 'info' ? 'ℹ️ Información del Admin' : severity === 'warning' ? '⚠️ Aviso del Admin' : '🔴 Advertencia Crítica',
+              title: titleStr, // <-- AQUÍ ESTÁ LA CLAVE
               body: message,
               link_type: 'warning',
               link_id: warnData.id,
