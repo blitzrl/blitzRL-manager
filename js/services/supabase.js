@@ -24,7 +24,6 @@ export function getSupabase() {
 export async function downloadAll() {
   const sb = getSupabase();
 
-  // <-- AÑADIMOS 'coaches' A LA DESCARGA -->
   const [seasons, divisions, teams, players, matches, playoffs, news, config, archived, coaches] = await Promise.all([
     sb.from('seasons').select('*'),
     sb.from('divisions').select('*'),
@@ -35,7 +34,7 @@ export async function downloadAll() {
     sb.from('news').select('*'),
     sb.from('config').select('*').maybeSingle(),
     sb.from('archived_seasons').select('*'),
-    sb.from('coaches').select('*') // <-- NUEVA TABLA
+    sb.from('coaches').select('*') // <-- LECTURA DE COACHES
   ]);
 
   const errors = [seasons, divisions, teams, players, matches, playoffs, news, config, archived, coaches]
@@ -145,11 +144,12 @@ export async function downloadAll() {
       movements: r.data?.movements || [],
       snapshot: r.data?.snapshot || null
     })),
+    // <-- MAPEO CORRECTO DE COACHES
     coaches: (coaches.data || []).map(r => ({
       id: r.id,
       name: r.name,
       teamId: r.team_id,
-      ...r.data // <-- Aquí se esparcen profilePicture, socials, etc.
+      ...r.data 
     })),
     config: {
       rosterRules: configData.rosterRules || { starters:3, substitutes:1, max:4 },
@@ -234,8 +234,7 @@ export async function pushTables(tables) {
         }));
         results.stats.players = (db.players || []).length;
       }
-      // <-- NUEVO BLOQUE PARA SUBIR COACHES -->
-      else if (tableName === 'coaches') {
+      else if (tableName === 'coaches') { // <-- ESCRITURA DE COACHES
         await replaceTable(sb, 'coaches', db.coaches || [], c => ({
           id: c.id,
           team_id: c.teamId || null,
@@ -342,9 +341,9 @@ export function subscribeRealtime(onChange) {
   _channel = sb.channel('zenith-realtime')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, () => onChange('teams'))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, () => onChange('players'))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'coaches' }, () => onChange('coaches'))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => onChange('matches'))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'news' }, () => onChange('news'))
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'coaches' }, () => onChange('coaches')) // <-- NUEVO
     .subscribe((status) => {
       console.log('[REALTIME]', status);
       window.dispatchEvent(new CustomEvent('zenith:realtime-status', { detail: status }));
