@@ -24,7 +24,8 @@ export function getSupabase() {
 export async function downloadAll() {
   const sb = getSupabase();
 
-  const [seasons, divisions, teams, players, matches, playoffs, news, config, archived] = await Promise.all([
+  // <-- AÑADIMOS 'coaches' A LA DESCARGA -->
+  const [seasons, divisions, teams, players, matches, playoffs, news, config, archived, coaches] = await Promise.all([
     sb.from('seasons').select('*'),
     sb.from('divisions').select('*'),
     sb.from('teams').select('*'),
@@ -33,10 +34,11 @@ export async function downloadAll() {
     sb.from('playoffs').select('*'),
     sb.from('news').select('*'),
     sb.from('config').select('*').maybeSingle(),
-    sb.from('archived_seasons').select('*')
+    sb.from('archived_seasons').select('*'),
+    sb.from('coaches').select('*') // <-- NUEVA TABLA
   ]);
 
-  const errors = [seasons, divisions, teams, players, matches, playoffs, news, config, archived]
+  const errors = [seasons, divisions, teams, players, matches, playoffs, news, config, archived, coaches]
     .map(r => r.error).filter(Boolean);
   if (errors.length) throw new Error('Supabase download: ' + errors[0].message);
 
@@ -143,6 +145,12 @@ export async function downloadAll() {
       movements: r.data?.movements || [],
       snapshot: r.data?.snapshot || null
     })),
+    coaches: (coaches.data || []).map(r => ({
+      id: r.id,
+      name: r.name,
+      teamId: r.team_id,
+      ...r.data // <-- Aquí se esparcen profilePicture, socials, etc.
+    })),
     config: {
       rosterRules: configData.rosterRules || { starters:3, substitutes:1, max:4 },
       pigWeights: configData.pigWeights || { goal:2, assist:1.5, save:1, missDivisor:5 },
@@ -158,8 +166,7 @@ export async function downloadAll() {
     transferLog: configData.transferLog || [],
     transferBannerBg: configData.transferBannerBg || '',
     economyLedger: configData.economyLedger || [],
-    contracts: configData.contracts || [],
-    coaches: configData.coaches || [] // <-- NUEVO
+    contracts: configData.contracts || []
   };
 }
 
@@ -227,6 +234,26 @@ export async function pushTables(tables) {
         }));
         results.stats.players = (db.players || []).length;
       }
+      // <-- NUEVO BLOQUE PARA SUBIR COACHES -->
+      else if (tableName === 'coaches') {
+        await replaceTable(sb, 'coaches', db.coaches || [], c => ({
+          id: c.id,
+          team_id: c.teamId || null,
+          name: c.name || '',
+          data: { 
+            profilePicture: c.profilePicture || '',
+            roleType: c.roleType || 'coach',
+            playerId: c.playerId || null,
+            nationalityCode: c.nationalityCode || '',
+            rlTracker: c.rlTracker || '',
+            socials: c.socials || {},
+            customLinks: c.customLinks || [],
+            history: c.history || [],
+            trophies: c.trophies || []
+          }
+        }));
+        results.stats.coaches = (db.coaches || []).length;
+      }
       else if (tableName === 'matches') {
         await replaceTable(sb, 'matches', db.matches || [], m => ({
           id: m.id, division_id: m.divisionId || null, season_id: m.seasonId || null,
@@ -283,8 +310,7 @@ export async function pushTables(tables) {
           transferLog: db.transferLog || [],
           transferBannerBg: db.transferBannerBg || '',
           economyLedger: db.economyLedger || [],
-          contracts: db.contracts || [],
-          coaches: db.coaches || [] // <-- NUEVO
+          contracts: db.contracts || []
         };
         const { error: cfgErr } = await sb.from('config').upsert({ id: 1, data: cfgData });
         if (cfgErr) throw new Error('config: ' + cfgErr.message);
@@ -318,6 +344,7 @@ export function subscribeRealtime(onChange) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, () => onChange('players'))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => onChange('matches'))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'news' }, () => onChange('news'))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'coaches' }, () => onChange('coaches')) // <-- NUEVO
     .subscribe((status) => {
       console.log('[REALTIME]', status);
       window.dispatchEvent(new CustomEvent('zenith:realtime-status', { detail: status }));
