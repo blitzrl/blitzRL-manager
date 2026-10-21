@@ -1,13 +1,8 @@
-// ============================================================
-// PLAYOFFS SERVICE — Bracket con series por partida (BO3/BO5/BO7)
-// ============================================================
 import { getDB, mutate } from './storage.js';
 import { computeStandings } from './standings.js';
 import { uid } from '../data/database.js';
+import { processTeamElimination } from './contracts.js'; // <-- AÑADIDO
 
-// ============================================================
-// NOMBRES DE RONDA
-// ============================================================
 const ROUND_NAMES = {
   64: '32° AVOS',
   32: '16° AVOS',
@@ -52,9 +47,6 @@ function winsNeeded(format){
   return Math.ceil(n / 2);
 }
 
-// ============================================================
-// GENERAR BRACKET
-// ============================================================
 export function generateBracket(divisionId){
   const db = getDB();
   const division = db.divisions.find(d => d.id === divisionId);
@@ -101,7 +93,6 @@ export function generateBracket(divisionId){
 
   const rounds = [];
 
-  // ---- Play-In ----
   let playInRound = null;
   if(playInTeams.length >= 2){
     const matches = [];
@@ -121,7 +112,6 @@ export function generateBracket(divisionId){
     rounds.push(playInRound);
   }
 
-  // ---- Main rounds ----
   const mainRounds = roundDefs.map((rd, rIdx) => {
     const isFinal = rIdx === roundDefs.length - 1;
     const isSemi = rIdx === roundDefs.length - 2;
@@ -146,7 +136,6 @@ export function generateBracket(divisionId){
   });
   rounds.push(...mainRounds);
 
-  // ---- Sembrado ----
   const firstRound = mainRounds[0];
   const size = firstRound.matches.length * 2;
   const seeds = new Array(size).fill(null);
@@ -194,7 +183,6 @@ export function generateBracket(divisionId){
     });
   }
 
-  // ---- BYE ----
   firstRound.matches.forEach((m, idx) => {
     const aKey = `${idx}:teamA`;
     const bKey = `${idx}:teamB`;
@@ -240,9 +228,6 @@ export function generateBracket(divisionId){
   return { bracket, adjustmentMsg };
 }
 
-// ============================================================
-// OBTENER
-// ============================================================
 export function getPlayoff(divisionId){
   const db = getDB();
   const found = db.playoffs.find(p => p.divisionId === divisionId);
@@ -280,9 +265,6 @@ function migrateBracket(oldBracket){
   return { rounds, championId: oldBracket.championId || null };
 }
 
-// ============================================================
-// ACTUALIZAR FORMATO DE UN PARTIDO
-// ============================================================
 export function updateMatchFormat(divisionId, roundId, matchIndex, format){
   mutate(d => {
     const target = d.playoffs.find(p => p.divisionId === divisionId);
@@ -291,14 +273,11 @@ export function updateMatchFormat(divisionId, roundId, matchIndex, format){
     if(!round) return;
     const match = round.matches?.[matchIndex];
     if(!match) return;
-    if(match.winnerId && !match.isBye) return; // serie finalizada, no cambiar
+    if(match.winnerId && !match.isBye) return; 
     match.format = format;
   });
 }
 
-// ============================================================
-// REPORTAR PARTIDA (acumulativo, tipo serie)
-// ============================================================
 export function reportBracketMatch(divisionId, roundId, matchIndex, payload){
   const { scoreA, scoreB, players } = payload;
   if(scoreA === scoreB) throw new Error('No puede haber empate');
@@ -316,7 +295,6 @@ export function reportBracketMatch(divisionId, roundId, matchIndex, payload){
 
     const winnerTeam = scoreA > scoreB ? match.teamA : match.teamB;
 
-    // Acumular partida
     match.games.push({
       id: uid('game'),
       scoreA, scoreB,
@@ -324,20 +302,16 @@ export function reportBracketMatch(divisionId, roundId, matchIndex, payload){
       players: players || []
     });
 
-    // Contar wins
     const wonA = match.games.filter(g => g.scoreA > g.scoreB).length;
     const wonB = match.games.filter(g => g.scoreB > g.scoreA).length;
 
-    // Wins necesarias
     const format = match.format || 'BO5';
     const need = winsNeeded(format);
 
-    // ¿Terminó la serie?
     if(wonA === need || wonB === need){
       const seriesWinner = wonA === need ? match.teamA : match.teamB;
       match.winnerId = seriesWinner.teamId;
 
-      // Propagar
       (match.winnerTargets || []).forEach(t => {
         const tr = bracket.rounds.find(r => r.id === t.roundId);
         if(!tr) return;
@@ -351,7 +325,6 @@ export function reportBracketMatch(divisionId, roundId, matchIndex, payload){
         };
       });
 
-      // ¿Es la final?
       const isFinalRound = round.id === bracket.rounds[bracket.rounds.length - 1].id;
       if(isFinalRound){
         target.championId = seriesWinner.teamId;
@@ -363,6 +336,12 @@ export function reportBracketMatch(divisionId, roundId, matchIndex, payload){
         );
         target.status = allFinished ? 'finished' : 'live';
       }
+      
+      // <-- AÑADIDO AQUÍ
+      const loserTeam = scoreA > scoreB ? match.teamB : match.teamA;
+      processTeamElimination(divisionId, loserTeam.teamId);
+      // -------------------
+
     } else {
       target.status = 'live';
     }
