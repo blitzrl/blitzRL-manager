@@ -1,9 +1,17 @@
 import { downloadAll, pushTables, subscribeRealtime, unsubscribeRealtime } from './supabase.js';
 
 const TABLE_TO_KEY = {
-  seasons: 'seasons', divisions: 'divisions', teams: 'teams', players: 'players',
-  coaches: 'coaches', matches: 'matches', playoffs: 'playoffs', news: 'news',
-  archived_seasons: 'archivedSeasons', config: 'config'
+  seasons: 'seasons',
+  divisions: 'divisions',
+  teams: 'teams',
+  players: 'players',
+  coaches: 'coaches',
+  matches: 'matches',
+  playoffs: 'playoffs',
+  news: 'news',
+  archived_seasons: 'archivedSeasons',
+  coach_contracts: 'contracts', // <-- AÑADIDO
+  config: 'config'
 };
 
 const PUSH_DEBOUNCE_MS = 2000;
@@ -35,7 +43,10 @@ export function captureCurrentHashes() {
   const hashes = {};
   Object.entries(TABLE_TO_KEY).forEach(([table, key]) => {
     if (key === 'config') {
-      hashes[table] = hashTable({ config: db.config, widgets: db.widgets, trophies: db.trophies, transferLog: db.transferLog, transferBannerBg: db.transferBannerBg });
+      hashes[table] = hashTable({
+        config: db.config, widgets: db.widgets, trophies: db.trophies,
+        transferLog: db.transferLog, transferBannerBg: db.transferBannerBg
+      });
     } else {
       hashes[table] = hashTable(db[key]);
     }
@@ -54,6 +65,7 @@ function detectDirty(oldHashes, newHashes) {
 export function notifyChange(oldHashes, newHashes) {
   const dirty = detectDirty(oldHashes, newHashes);
   if (dirty.length === 0) return;
+
   dirty.forEach(t => _dirtyTables.add(t));
   updateSyncChip('pending');
   schedulePush();
@@ -61,7 +73,9 @@ export function notifyChange(oldHashes, newHashes) {
 
 function schedulePush() {
   if (_pushTimer) clearTimeout(_pushTimer);
-  _pushTimer = setTimeout(() => { doPush().catch(err => console.error('[SYNC] push error:', err)); }, PUSH_DEBOUNCE_MS);
+  _pushTimer = setTimeout(() => {
+    doPush().catch(err => console.error('[SYNC] push error:', err));
+  }, PUSH_DEBOUNCE_MS);
 }
 
 async function doPush() {
