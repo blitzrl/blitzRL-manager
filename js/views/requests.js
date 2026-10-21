@@ -37,7 +37,6 @@ async function loadRequests() {
   
   try {
     const sb = getSupabase();
-    // Buscamos las pendientes y las aceptadas por el otro coach
     const { data, error } = await sb.from('coach_requests')
       .select('*')
       .in('status', ['pending', 'accepted_by_target'])
@@ -46,33 +45,43 @@ async function loadRequests() {
     if (error) throw error;
     
     // AUTO-EJECUCIÓN DE FICHAJES
-    // Si hay un fichaje aceptado por el coach, lo ejecutamos aquí mismo.
     const acceptedTransfers = data.filter(r => r.type === 'transfer_offer' && r.status === 'accepted_by_target');
     
     for (const req of acceptedTransfers) {
       const payload = req.payload;
       try {
-        // Ejecutamos el traspaso real usando la función del Gestor
+        // 1. Ejecutar traspaso real
         doTransferPlayer(payload.playerId, req.from_team_id, false, payload.price);
         
-        // Marcamos la solicitud como completada en la BD
+        // 2. Marcar como completada en la BD
         await sb.from('coach_requests').update({ 
           status: 'approved_by_admin',
           admin_response_at: new Date().toISOString(),
           admin_response_note: 'Auto-aprobado por fichaje directo'
         }).eq('id', req.id);
+
+        // 3. Notificar al coach vendedor
+        const toCoachId = req.to_coach_id;
+        if (toCoachId) {
+          await sb.from('coach_notifications').insert({
+            coach_id: toCoachId,
+            type: 'transfer_completed',
+            title: '✅ Fichaje Aceptado',
+            body: `Tu oferta por ${payload.playerName} por $${(payload.price || 0).toLocaleString('en-US')} ha sido aceptada.`,
+            link_type: 'none',
+            priority: 'normal'
+          });
+        }
         
         toast(`💰 Fichaje automático: ${payload.playerName} transferido`, 'success');
       } catch (err) {
         console.error('Error auto-fichaje:', err);
-        toast('Error al ejecutar fichaje automático: ' + err.message, 'error');
+        toast('Error al ejecutar fichaje: ' + err.message, 'error');
       }
     }
 
-    // Filtramos la lista para mostrar solo lo que requiere tu atención
-    // (Pendientes, o Aceptados que NO son fichajes)
     _requests = data.filter(r => {
-      if (r.type === 'transfer_offer' && r.status === 'accepted_by_target') return false; // Ya se ejecutó arriba
+      if (r.type === 'transfer_offer' && r.status === 'accepted_by_target') return false; 
       return true;
     });
     
@@ -100,9 +109,9 @@ function renderRequestCard(req) {
   const payload = req.payload || {};
   const db = getDB();
   
-  const fromTeam = db.teams.find(t => t.id === req.from_team_id)?.name || 'Equipo Desconocido';
+  const fromTeam = db.teams.find(t => t.id === req.from_team_id)?.name || 'Equipo';
   const toTeam = db.teams.find(t => t.id === req.to_team_id)?.name || 'Agente Libre';
-  const coach = db.coaches.find(c => c.id === req.from_coach_id)?.name || 'Coach Desconocido';
+  const coach = db.coaches.find(c => c.id === req.from_coach_id)?.name || 'Coach';
   
   let typeLabel = '';
   let description = '';
@@ -124,7 +133,6 @@ function renderRequestCard(req) {
   const statusLabel = req.status === 'pending' ? 'PENDIENTE (ESPERANDO AL COACH)' : 'ACEPTADO POR EL COACH (REQUIERE TU APROBACIÓN)';
   const badgeClass = req.status === 'pending' ? 'badge-live' : 'badge-win';
 
-  // Si está pendiente de aceptación del otro coach, no mostramos botones de Admin
   const canAdminAct = req.status === 'accepted_by_target';
 
   return `
@@ -196,7 +204,6 @@ async function approveRequest(reqId) {
       toast(e.message, 'error');
     }
   } else {
-    // Para otros tipos, solo actualizamos el estado
     await updateRequestStatus(reqId, 'approved_by_admin', 'Aprobado por el administrador');
   }
 }
