@@ -8,7 +8,7 @@ const TABLE_TO_KEY = {
   divisions: 'divisions',
   teams: 'teams',
   players: 'players',
-  coaches: 'coaches', // <-- NUEVO
+  coaches: 'coaches', // <-- LA LÍNEA QUE FALTABA
   matches: 'matches',
   playoffs: 'playoffs',
   news: 'news',
@@ -26,9 +26,6 @@ let _lastPushAt = 0;
 let _realtimeCooldownUntil = 0;
 let _initialized = false;
 
-// ============================================================
-// HASH
-// ============================================================
 function hashString(str) {
   let h = 5381;
   for (let i = 0; i < str.length; i++) {
@@ -68,9 +65,6 @@ function detectDirty(oldHashes, newHashes) {
   return dirty;
 }
 
-// ============================================================
-// HOOK: llamado por storage.mutate()
-// ============================================================
 export function notifyChange(oldHashes, newHashes) {
   const dirty = detectDirty(oldHashes, newHashes);
   if (dirty.length === 0) return;
@@ -117,9 +111,6 @@ async function doPush() {
   }
 }
 
-// ============================================================
-// REALTIME
-// ============================================================
 let _realtimeDebounce = null;
 
 function onRemoteChange(table) {
@@ -139,7 +130,6 @@ async function pullFromRemote() {
     const remoteDB = await downloadAll();
     const localRaw = window.__zenithGetRawDB ? window.__zenithGetRawDB() : null;
 
-    // ✅ FIX: Servidor es fuente de verdad. Solo preservamos viewSeasonId (local).
     const merged = {
       ...remoteDB,
       viewSeasonId: localRaw?.viewSeasonId || null
@@ -147,10 +137,8 @@ async function pullFromRemote() {
 
     if (window.__zenithSetRawDB) window.__zenithSetRawDB(merged);
 
-    // Resetear hashes para no marcar como dirty por cambios remotos
     if (window.__zenithCaptureHashes) {
-      const newHashes = window.__zenithCaptureHashes();
-      console.log('[SYNC] Hashes reseteados tras pull remoto');
+      window.__zenithCaptureHashes();
     }
 
     updateSyncChip('synced');
@@ -161,16 +149,10 @@ async function pullFromRemote() {
   }
 }
 
-// ============================================================
-// CHIP
-// ============================================================
 function updateSyncChip(state) {
   window.dispatchEvent(new CustomEvent('zenith:sync-chip', { detail: state }));
 }
 
-// ============================================================
-// INIT
-// ============================================================
 export async function initRealtimeSync() {
   if (_initialized) return;
   _initialized = true;
@@ -187,11 +169,7 @@ export function destroySync() {
   _initialized = false;
 }
 
-// ============================================================
-// MANUAL
-// ============================================================
 export async function forcePull() {
-  // Forzar pull: resetear flag de descarga inicial
   window.__zenithHasDownloadedThisSession = false;
   await pullFromRemote();
   window.__zenithHasDownloadedThisSession = true;
