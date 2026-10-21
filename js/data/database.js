@@ -267,7 +267,7 @@ export function defaultDatabase(){
 
     teams: [],
     players: [],
-    coaches: [], // <-- NUEVO
+    coaches: [],
     matches: [],
     playoffs: [],
     news: [],
@@ -290,7 +290,7 @@ export function defaultDatabase(){
       badStreak: { enabled: true, minGames: 5, consecutiveLosses: 3, penalty: 0.10 },
       seasonEnd: { autoAssignTrophies: true, requireAllDivisions: true },
       economy: JSON.parse(JSON.stringify(ECONOMY_DEFAULTS)), 
-      marketSettings: { open: true, allowTransfers: true, allowLoans: true }, // <-- NUEVO
+      marketSettings: { open: true, allowTransfers: true, allowLoans: true },
       ai: {
         provider: 'gemini',
         apiKey: '',
