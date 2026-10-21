@@ -7,7 +7,8 @@ import { NATIONS, RANKS, PLATFORMS, RANK_LEVELS, RANK_DIVISIONS, getNationFlag, 
 import { openRowActions, openTransferModal } from '../services/transfers.js';
 import { renderVitrina } from '../services/trophies.js';
 import { recordTransaction, getTeamSquadValue } from '../services/economy.js';
-import { openLoanModal } from './loanModal.js'; // <-- IMPORTACIÓN AÑADIDA
+import { openLoanModal } from './loanModal.js'; 
+import { showCoachProfile } from './coaches.js'; // <-- AÑADIDO
 
 let _searchQuery = '';
 
@@ -74,6 +75,10 @@ function teamCard(t){
 
   const searchable = `${t.name} ${t.coach} ${roster.map(r => r.player?.name || '').join(' ')}`.toLowerCase();
 
+  // Buscar IDs de coach si están registrados en la tabla de coaches
+  const coachObj = db.coaches?.find(c => c.teamId === t.id && c.roleType === 'coach');
+  const assistantObj = db.coaches?.find(c => c.teamId === t.id && c.roleType === 'assistant');
+
   return `
     <div class="card" data-searchable="${searchable}">
       <div class="team-card-head" style="align-items:flex-start">
@@ -84,7 +89,10 @@ function teamCard(t){
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
             <div>
               <div class="team-name">${t.name}</div>
-              <div class="team-coach">Coach: ${t.coach||'—'}</div>
+              <div class="team-coach" style="margin-top:2px">
+                Coach: ${coachObj ? `<span style="color:var(--accent); cursor:pointer; text-decoration:underline;" data-show-coach="${coachObj.id}">${t.coach||'—'}</span>` : (t.coach||'—')}
+              </div>
+              ${t.assistant ? `<div class="team-coach" style="margin-top:2px">Auxiliar: ${assistantObj ? `<span style="color:var(--accent); cursor:pointer; text-decoration:underline;" data-show-coach="${assistantObj.id}">${t.assistant}</span>` : t.assistant}</div>` : ''}
             </div>
             <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;font-size:10.5px;font-weight:600">
               <span class="chip chip-accent" style="font-size:9.5px;padding:2px 6px">Plantilla: $${squadValue.toLocaleString()}</span>
@@ -146,6 +154,14 @@ export function bindTeamsEvents(){
     });
   });
 
+  // Listener para perfiles de coach
+  document.querySelectorAll('[data-show-coach]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showCoachProfile(el.dataset.showCoach);
+    });
+  });
+
   document.querySelectorAll('[data-fichar-free-agent]').forEach(btn => {
     btn.addEventListener('click', (e) => {
        e.stopPropagation();
@@ -181,6 +197,7 @@ export function openTeamForm(teamId=null){
     logo: team?.logo || '',
     name: team?.name || '',
     coach: team?.coach || '',
+    assistant: team?.assistant || '', // <-- AÑADIDO
     money: team?.money || 0,
     roster: team ? JSON.parse(JSON.stringify(team.roster)) : []
   };
@@ -212,10 +229,13 @@ function renderTeamFormBody(formState, db){
       <div class="field"><label>Nombre</label><input class="input" id="tName" value="${formState.name}"></div>
       <div class="field"><label>Coach</label><input class="input" id="tCoach" value="${formState.coach}"></div>
     </div>
-    <div class="field">
-      <label>Saldo / Dinero ($)</label>
-      <input class="input" type="number" id="tMoney" value="${formState.money}">
-      <small class="field-hint" style="color:${isDebt ? 'var(--danger)' : 'var(--muted)'}">Los cambios manuales se registrarán como "Ajuste manual".</small>
+    <div class="row">
+      <div class="field"><label>Auxiliar</label><input class="input" id="tAssistant" value="${formState.assistant}"></div>
+      <div class="field">
+        <label>Saldo / Dinero ($)</label>
+        <input class="input" type="number" id="tMoney" value="${formState.money}">
+        <small class="field-hint" style="color:${isDebt ? 'var(--danger)' : 'var(--muted)'}">Los cambios manuales se registrarán como "Ajuste manual".</small>
+      </div>
     </div>
     <div class="divider"></div>
     <div class="section-minihead">
@@ -256,11 +276,13 @@ function renderRosterRows(formState, db, container){
 function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, modalCtl){
   const nameInput = root.querySelector('#tName');
   const coachInput = root.querySelector('#tCoach');
+  const assistantInput = root.querySelector('#tAssistant');
   const moneyInput = root.querySelector('#tMoney');
   const rosterRows = root.querySelector('#rosterRows');
 
   nameInput.addEventListener('input', ()=> formState.name = nameInput.value);
   coachInput.addEventListener('input', ()=> formState.coach = coachInput.value);
+  assistantInput.addEventListener('input', ()=> formState.assistant = assistantInput.value);
   moneyInput.addEventListener('input', ()=> formState.money = +moneyInput.value || 0);
 
   const drop = root.querySelector('#logoDrop');
@@ -310,11 +332,11 @@ function bindTeamForm(root, formState, db, team, seasonId, activeDivisionId, mod
       mutate(d => {
         if(team){
           const t = d.teams.find(x=>x.id===team.id);
-          if(t) Object.assign(t, { name, coach: formState.coach, logo: formState.logo, roster: validRoster });
+          if(t) Object.assign(t, { name, coach: formState.coach, assistant: formState.assistant, logo: formState.logo, roster: validRoster });
         } else {
           savedTeamId = uid('team');
           d.teams.push({
-            id: savedTeamId, name, tag:'', logo: formState.logo, coach: formState.coach,
+            id: savedTeamId, name, tag:'', logo: formState.logo, coach: formState.coach, assistant: formState.assistant,
             divisionId: activeDivisionId, seasonId, roster: validRoster, trophies: [], money: 0
           });
         }
@@ -356,7 +378,6 @@ export function openPlayerForm(playerId=null, onSaved=null){
     ${NATIONS.map(n => `<option value="${n.code}" ${player?.nationalityCode===n.code?'selected':''}>${n.flag} ${n.name}</option>`).join('')}
   `;
 
-  // <-- AÑADIDO BOTÓN DE PRÉSTAMO AQUÍ -->
   const extraButtons = player ? `
     <div class="player-form-actions">
       <button type="button" class="btn btn-sm" id="pfTransfer">🔄 TRANSFERIR</button>
@@ -439,7 +460,6 @@ export function openPlayerForm(playerId=null, onSaved=null){
       if(player){
         const importLazy = async () => await import('../services/transfers.js');
         
-        // <-- BOTÓN DE PRÉSTAMO AÑADIDO AQUÍ -->
         root.querySelector('#pfLoan')?.addEventListener('click', () => {
           closeTopModal();
           setTimeout(() => openLoanModal(player.id), 100);
