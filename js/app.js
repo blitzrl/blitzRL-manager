@@ -25,6 +25,7 @@ import { coachesView, bindCoachesEvents } from './views/coaches.js';
 import { requestsView, bindRequestsEvents } from './views/requests.js';
 import { warningsView, bindWarningsEvents } from './views/warnings.js';
 import { destroyAllCarousels } from './views/widgetCarousel.js';
+import { accountsView, bindAccountsEvents } from './views/accounts.js';
 
 window.addEventListener('error', e => console.error('[ZENITH] error:', e.error || e.message));
 window.addEventListener('unhandledrejection', e => console.error('[ZENITH] promise rejected:', e.reason));
@@ -230,6 +231,7 @@ registerRoute('contracts', contractsView);
 registerRoute('coaches', coachesView);
 registerRoute('requests', requestsView);
 registerRoute('warnings', warningsView);
+registerRoute('accounts', accountsView);
 
 let _currentViewFn = null;
 let _currentParams = [];
@@ -266,6 +268,7 @@ function renderView(viewFn, params){
     safeBind(bindCoachesEvents);
     safeBind(bindRequestsEvents);
     safeBind(bindWarningsEvents);
+    safeBind(bindAccountsEvents);
 
     updateActiveNav();
     updateDivisionHeader();
