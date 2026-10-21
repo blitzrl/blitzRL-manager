@@ -2,11 +2,13 @@ import { getDB } from '../services/storage.js';
 import { getSupabase } from '../services/supabase.js';
 import { toast, openModal, closeTopModal } from '../services/ui.js';
 
-let _accounts = [];
+let _accounts = null; // Null significa que no ha cargado nunca
 let _loading = false;
 
 export function accountsView() {
-  loadAccounts(); // Carga asíncrona
+  if (_accounts === null) {
+    loadAccounts();
+  }
 
   return `
     <div class="page-head">
@@ -17,10 +19,10 @@ export function accountsView() {
     <div class="card">
       <div class="card-header">
         <div class="card-title"><span class="dot">◆</span>ACCESOS AL PORTAL</div>
-        <span class="card-sub" id="accCount">Cargando...</span>
+        <span class="card-sub" id="accCount">${_accounts ? _accounts.length + ' cuentas' : 'Cargando...'}</span>
       </div>
       <div id="accountsList">
-        <div style="text-align:center;padding:20px;color:var(--muted)">Cargando cuentas de Supabase...</div>
+        ${_accounts ? renderAccountsList() : '<div style="text-align:center;padding:20px;color:var(--muted)">Cargando cuentas de Supabase...</div>'}
       </div>
     </div>
   `;
@@ -30,70 +32,76 @@ async function loadAccounts() {
   if (_loading) return;
   _loading = true;
   
-  const listEl = document.getElementById('accountsList');
-  const countEl = document.getElementById('accCount');
-  
   try {
     const sb = getSupabase();
     const { data, error } = await sb.from('coach_accounts').select('*').order('created_at', { ascending: false });
 
     if (error) throw error;
-    
     _accounts = data || [];
-    
-    if (countEl) countEl.textContent = `${_accounts.length} cuentas`;
-    
-    if (_accounts.length === 0) {
-      if (listEl) listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">No hay cuentas creadas.</div>';
-      return;
-    }
-
-    const db = getDB();
-
-    if (listEl) {
-      listEl.innerHTML = _accounts.map(acc => {
-        const coach = db.coaches.find(c => c.id === acc.coach_id);
-        const team = db.teams.find(t => t.id === acc.team_id);
-        
-        return `
-          <div class="card" style="margin-bottom:10px; border-left:4px solid var(--accent)">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">
-              <div>
-                <div style="font-size:14px; font-weight:600; color:var(--silver-light); margin-bottom:4px;">
-                  ${coach ? coach.name : acc.display_name} 
-                  ${team ? `<span style="color:var(--muted); font-size:12px;">(${team.name})</span>` : '<span style="color:var(--gold); font-size:12px;">(Agente Libre)</span>'}
-                </div>
-                <div style="font-size:12px; color:var(--muted);">
-                  Usuario: <strong style="color:var(--accent)">${acc.username}</strong> · 
-                  Estado: <span style="color:${acc.active ? 'var(--success)' : 'var(--danger)'}">${acc.active ? 'Activo' : 'Suspendido'}</span>
-                </div>
-              </div>
-              <div style="display:flex; gap:8px;">
-                <button class="btn btn-sm" data-reset-pass="${acc.id}" data-username="${acc.username}">RESETEAR CONTRASEÑA</button>
-                <button class="btn btn-sm ${acc.active ? 'btn-danger' : 'btn-primary'}" data-toggle-acc="${acc.id}" data-active="${acc.active}">
-                  ${acc.active ? 'SUSPENDER' : 'ACTIVAR'}
-                </button>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('');
-      
-      bindAccountButtons();
-    }
+    updateUI();
 
   } catch (err) {
     console.error('[ACCOUNTS] Error al cargar:', err);
+    const listEl = document.getElementById('accountsList');
     if (listEl) listEl.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger)">Error al cargar: ${err.message}</div>`;
+    const countEl = document.getElementById('accCount');
+    if (countEl) countEl.textContent = 'Error';
   } finally {
     _loading = false;
   }
+}
+
+function updateUI() {
+  const listEl = document.getElementById('accountsList');
+  const countEl = document.getElementById('accCount');
+  
+  if (countEl) countEl.textContent = `${_accounts.length} cuentas`;
+  if (listEl) {
+    listEl.innerHTML = renderAccountsList();
+    bindAccountButtons();
+  }
+}
+
+function renderAccountsList() {
+  if (_accounts.length === 0) return '<div style="text-align:center;padding:20px;color:var(--muted)">No hay cuentas creadas.</div>';
+
+  const db = getDB();
+
+  return _accounts.map(acc => {
+    const coach = db.coaches.find(c => c.id === acc.coach_id);
+    const team = db.teams.find(t => t.id === acc.team_id);
+    
+    return `
+      <div class="card" style="margin-bottom:10px; border-left:4px solid var(--accent)">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">
+          <div>
+            <div style="font-size:14px; font-weight:600; color:var(--silver-light); margin-bottom:4px;">
+              ${coach ? coach.name : acc.display_name} 
+              ${team ? `<span style="color:var(--muted); font-size:12px;">(${team.name})</span>` : '<span style="color:var(--gold); font-size:12px;">(Agente Libre)</span>'}
+            </div>
+            <div style="font-size:12px; color:var(--muted);">
+              Usuario: <strong style="color:var(--accent)">${acc.username}</strong> · 
+              Estado: <span style="color:${acc.active ? 'var(--success)' : 'var(--danger)'}">${acc.active ? 'Activo' : 'Suspendido'}</span>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-sm" data-reset-pass="${acc.id}" data-username="${acc.username}">RESETEAR CONTRASEÑA</button>
+            <button class="btn btn-sm ${acc.active ? 'btn-danger' : 'btn-primary'}" data-toggle-acc="${acc.id}" data-active="${acc.active}">
+              ${acc.active ? 'SUSPENDER' : 'ACTIVAR'}
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 export function bindAccountsEvents() {
   document.getElementById('btnNewAccount')?.addEventListener('click', () => {
     openNewAccountModal();
   });
+  
+  if (_accounts) bindAccountButtons();
 }
 
 function bindAccountButtons() {
@@ -122,7 +130,6 @@ function bindAccountButtons() {
 
 function openNewAccountModal() {
   const db = getDB();
-  // Solo coaches sin cuenta
   const availableCoaches = db.coaches.filter(c => !_accounts.some(a => a.coach_id === c.id));
 
   openModal({
@@ -160,12 +167,10 @@ function openNewAccountModal() {
         const password = root.querySelector('#acc-password').value;
 
         if (!coachId || !username) return toast('Faltan campos', 'error');
-        
         const coach = db.coaches.find(c => c.id === coachId);
 
         try {
           const sb = getSupabase();
-          // Llamamos a la función SQL que creamos arriba
           const { data, error } = await sb.rpc('admin_create_coach_account', {
             p_coach_id: coachId,
             p_team_id: coach.teamId || null,
@@ -179,6 +184,7 @@ function openNewAccountModal() {
 
           toast('Cuenta creada exitosamente', 'success');
           closeTopModal();
+          _accounts = null; // Forzar recarga
           loadAccounts();
         } catch (e) {
           console.error(e);
@@ -198,7 +204,6 @@ function resetPassword(accountId, username) {
     body: `
       <p style="font-size:13px; color:var(--silver); margin-bottom:14px;">
         Se generará una nueva contraseña temporal para <strong>${username}</strong>. 
-        La contraseña anterior dejará de funcionar inmediatamente.
       </p>
       <div class="field">
         <label>Nueva Contraseña</label>
@@ -213,7 +218,6 @@ function resetPassword(accountId, username) {
       root.querySelector('#confirmResetPass').addEventListener('click', async () => {
         try {
           const sb = getSupabase();
-          // Usamos una función criptográfica en el servidor para actualizar
           const { error } = await sb.rpc('admin_reset_password', {
             p_username: username,
             p_new_password: newPass
