@@ -6,9 +6,6 @@ let _db = null;
 let _viewCache = null;
 let _viewCacheForId = null;
 
-// ============================================================
-// CARGA
-// ============================================================
 export function loadDB(){
   if(_db) return _db;
 
@@ -47,9 +44,6 @@ export function loadDB(){
   return _db;
 }
 
-// ============================================================
-// SANITIZACIÓN
-// ============================================================
 function normalizePlayer(p){
   if(!p || typeof p !== 'object') return;
   if(p.rankLevel === undefined)        p.rankLevel = 2;
@@ -63,7 +57,7 @@ function normalizePlayer(p){
   if(!Array.isArray(p.sanctions))      p.sanctions = [];
   if(!Array.isArray(p.careerSnapshots)) p.careerSnapshots = [];
   if(!Array.isArray(p.trophies))       p.trophies = [];
-  if(!Array.isArray(p.priceHistory))   p.priceHistory = []; // NUEVO
+  if(!Array.isArray(p.priceHistory))   p.priceHistory = [];
   if(p.status === undefined)           p.status = 'owned';
   if(p.pendingTeamId === undefined)    p.pendingTeamId = null;
   if(p.divisionId === undefined)       p.divisionId = null;
@@ -82,7 +76,7 @@ function normalizeTeam(t){
   if(t.coach === undefined) t.coach = '';
   if(t.divisionId === undefined) t.divisionId = null;
   if(t.seasonId === undefined)   t.seasonId = null;
-  if(t.money === undefined)      t.money = 0; // NUEVO
+  if(t.money === undefined)      t.money = 0; 
 }
 
 function normalizeNews(n){
@@ -100,9 +94,6 @@ function normalizeNews(n){
   if(n.customCategory === undefined) n.customCategory = '';
 }
 
-// ============================================================
-// MIGRACIÓN DE WIDGETS
-// ============================================================
 function migrateWidgets(db){
   const defaults = getDefaultWidgets();
   const existingRaw = Array.isArray(db.widgets) ? db.widgets : [];
@@ -135,9 +126,6 @@ function migrateWidgets(db){
   db.widgets = [...merged, ...extras];
 }
 
-// ============================================================
-// MIGRACIÓN DEL TEMA
-// ============================================================
 function migrateTheme(db){
   const defaults = getDefaultTheme();
   if (!db.config.theme || typeof db.config.theme !== 'object') {
@@ -170,9 +158,6 @@ function deepMerge(defaults, overrides){
   return result;
 }
 
-// ============================================================
-// MIGRACIÓN GENERAL
-// ============================================================
 function migrate(db){
   if(!db || typeof db !== 'object') return defaultDatabase();
   db.meta ||= {};
@@ -191,7 +176,8 @@ function migrate(db){
   db.transferLog   ||= [];
   db.trophyHistory ||= [];
   db.trophies      ||= {};
-  db.economyLedger ||= []; // NUEVO
+  db.economyLedger ||= []; 
+  db.contracts     ||= []; // <-- AÑADIDO AQUÍ
   if(db.transferBannerBg === undefined) db.transferBannerBg = '';
 
   if(!Array.isArray(db.archivedSeasons)) db.archivedSeasons = [];
@@ -203,11 +189,9 @@ function migrate(db){
   db.config.badStreak   ||= { enabled:true, minGames:5, consecutiveLosses:3, penalty:0.10 };
   db.config.seasonEnd   ||= { autoAssignTrophies:true, requireAllDivisions:true };
   
-  // NUEVO: Inyectar economía por defecto si no existe
   if (!db.config.economy) {
     db.config.economy = JSON.parse(JSON.stringify(ECONOMY_DEFAULTS));
   } else {
-    // Asegurar que si hay economía, no falten las nuevas llaves si actualizamos en el futuro
     db.config.economy = deepMerge(ECONOMY_DEFAULTS, db.config.economy);
   }
 
@@ -269,9 +253,6 @@ function migrate(db){
   return db;
 }
 
-// ============================================================
-// SNAPSHOT MIGRATION
-// ============================================================
 function migrateSnapshot(snapshot, liveDB){
   const s = JSON.parse(JSON.stringify(snapshot));
   s.meta ||= {};
@@ -289,6 +270,7 @@ function migrateSnapshot(snapshot, liveDB){
   s.trophyHistory ||= [];
   s.trophies ||= {};
   s.economyLedger ||= [];
+  s.contracts ||= []; // <-- AÑADIDO AQUÍ
   s.transferBannerBg ||= '';
 
   s.config ||= JSON.parse(JSON.stringify(liveDB.config));
@@ -316,9 +298,6 @@ function migrateSnapshot(snapshot, liveDB){
   return s;
 }
 
-// ============================================================
-// ACCESO
-// ============================================================
 export function getDB(){
   if(!_db) loadDB();
 
@@ -360,9 +339,6 @@ export function isViewMode(){
   return !!( _db || loadDB() ).viewSeasonId;
 }
 
-// ============================================================
-// PERSISTENCIA
-// ============================================================
 export function persist(){
   if(!_db) return;
   _db.meta.updatedAt = new Date().toISOString();
@@ -380,9 +356,6 @@ export function persist(){
   }
 }
 
-// ============================================================
-// MUTATE — con hooks de sync
-// ============================================================
 export function mutate(fn){
   if(!_db) loadDB();
 
