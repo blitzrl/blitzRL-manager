@@ -267,6 +267,7 @@ export function defaultDatabase(){
 
     teams: [],
     players: [],
+    coaches: [], // <-- NUEVO
     matches: [],
     playoffs: [],
     news: [],
@@ -278,7 +279,7 @@ export function defaultDatabase(){
     trophies: {},
     transferBannerBg: '',
     economyLedger: [], 
-    contracts: [], // <-- AÑADIDO AQUÍ
+    contracts: [], 
 
     archivedSeasons: [],
     viewSeasonId: null,
@@ -289,6 +290,7 @@ export function defaultDatabase(){
       badStreak: { enabled: true, minGames: 5, consecutiveLosses: 3, penalty: 0.10 },
       seasonEnd: { autoAssignTrophies: true, requireAllDivisions: true },
       economy: JSON.parse(JSON.stringify(ECONOMY_DEFAULTS)), 
+      marketSettings: { open: true, allowTransfers: true, allowLoans: true }, // <-- NUEVO
       ai: {
         provider: 'gemini',
         apiKey: '',
