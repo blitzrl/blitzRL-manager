@@ -5,6 +5,7 @@ import { getRankColor, getRankLabel } from '../data/nations.js';
 import { computeStandings } from '../services/standings.js';
 import { renderVitrina } from '../services/trophies.js';
 import { openTransferModal } from '../services/transfers.js';
+import { showCoachProfile } from './coaches.js'; // <-- AÑADIDO
 
 let _searchQuery = '';
 
@@ -67,6 +68,9 @@ function teamCardMini(t){
   const db = getDB();
   const searchable = `${t.name} ${t.coach} ${(t.roster||[]).map(r => db.players.find(x=>x.id===r.playerId)?.name || '').join(' ')}`.toLowerCase();
 
+  const coachObj = db.coaches?.find(c => c.teamId === t.id && c.roleType === 'coach');
+  const assistantObj = db.coaches?.find(c => c.teamId === t.id && c.roleType === 'assistant');
+
   return `
     <div class="card team-card" data-team-profile="${t.id}" data-searchable="${searchable}">
       <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
@@ -75,7 +79,10 @@ function teamCardMini(t){
         </div>
         <div>
           <div class="team-name">${t.name}</div>
-          <div class="team-coach">Coach: ${t.coach || '—'}</div>
+          <div class="team-coach" style="margin-top:2px">
+            Coach: ${coachObj ? `<span style="color:var(--accent); cursor:pointer; text-decoration:underline;" data-show-coach="${coachObj.id}">${t.coach||'—'}</span>` : (t.coach||'—')}
+          </div>
+          ${t.assistant ? `<div class="team-coach" style="margin-top:2px">Aux: ${assistantObj ? `<span style="color:var(--accent); cursor:pointer; text-decoration:underline;" data-show-coach="${assistantObj.id}">${t.assistant}</span>` : t.assistant}</div>` : ''}
         </div>
       </div>
       <div class="divider"></div>
@@ -118,6 +125,9 @@ function teamProfileView(team){
   const phase = computeTeamPhase(team.id);
   const trophies = team.trophies || [];
 
+  const coachObj = db.coaches?.find(c => c.teamId === team.id && c.roleType === 'coach');
+  const assistantObj = db.coaches?.find(c => c.teamId === team.id && c.roleType === 'assistant');
+
   return `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:18px">
       <button class="btn btn-sm" onclick="location.hash='#/rosters'">← VOLVER</button>
@@ -134,7 +144,13 @@ function teamProfileView(team){
             ${team.name}
             ${phase ? `<span class="phase-badge ${phase.state}"><span class="dot"></span>${phase.label}</span>` : ''}
           </div>
-          <div class="team-coach" style="letter-spacing:.12em;margin-top:4px">COACH · ${team.coach || '—'}</div>
+          <div class="team-coach" style="letter-spacing:.12em;margin-top:4px">
+            COACH · ${coachObj ? `<span style="color:var(--accent); cursor:pointer; text-decoration:underline;" data-show-coach="${coachObj.id}">${team.coach||'—'}</span>` : (team.coach || '—')}
+          </div>
+          ${team.assistant ? `
+          <div class="team-coach" style="letter-spacing:.12em;margin-top:2px; font-size:11px">
+            AUXILIAR · ${assistantObj ? `<span style="color:var(--accent); cursor:pointer; text-decoration:underline;" data-show-coach="${assistantObj.id}">${team.assistant}</span>` : team.assistant}
+          </div>` : ''}
         </div>
         <div class="kpi-strip" style="grid-template-columns:repeat(3,1fr);min-width:340px">
           <div class="kpi"><div class="kpi-val">${teamAgg.games}</div><div class="kpi-lab">PARTIDAS</div></div>
@@ -214,7 +230,13 @@ export function bindRostersEvents(){
   document.querySelectorAll('[data-team-profile]').forEach(card =>
     card.addEventListener('click', ()=>{ location.hash = '#/rosters/' + card.dataset.teamProfile; }));
 
-  // FIX: Evento para fichar agente libre
+  document.querySelectorAll('[data-show-coach]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showCoachProfile(el.dataset.showCoach);
+    });
+  });
+
   document.querySelectorAll('[data-fichar-free-agent]').forEach(btn => {
     btn.addEventListener('click', (e) => {
        e.stopPropagation();
@@ -222,7 +244,6 @@ export function bindRostersEvents(){
     });
   });
 
-  // FIX: Hacer clickeables a los jugadores en las tarjetas de equipo
   document.querySelectorAll('[data-open-player]').forEach(row => {
     row.addEventListener('click', (e) => {
       if(e.target.closest('button')) return; 
@@ -231,7 +252,6 @@ export function bindRostersEvents(){
     });
   });
 
-  // Buscador en tiempo real
   const searchInput = document.getElementById('teamSearchInput');
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
@@ -240,9 +260,9 @@ export function bindRostersEvents(){
       cards.forEach(card => {
         const text = card.dataset.searchable;
         if (text.includes(_searchQuery)) {
-          card.style.display = ''; // Mostrar
+          card.style.display = ''; 
         } else {
-          card.style.display = 'none'; // Ocultar
+          card.style.display = 'none'; 
         }
       });
     });
