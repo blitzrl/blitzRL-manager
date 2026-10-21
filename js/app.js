@@ -20,8 +20,10 @@ import { configView, bindConfigEvents } from './views/config.js';
 import { ballonDorView, bindBallonDorEvents } from './views/ballonDor.js';
 import { marketView, bindMarketEvents } from './views/market.js';
 import { performanceView, bindPerformanceEvents } from './views/performance.js';
-import { contractsView, bindContractsEvents } from './views/contracts.js'; // <-- NUEVO
-import { coachesView, bindCoachesEvents } from './views/coaches.js'; // <-- NUEVO
+import { contractsView, bindContractsEvents } from './views/contracts.js';
+import { coachesView, bindCoachesEvents } from './views/coaches.js';
+import { requestsView, bindRequestsEvents } from './views/requests.js';
+import { warningsView, bindWarningsEvents } from './views/warnings.js';
 import { destroyAllCarousels } from './views/widgetCarousel.js';
 
 window.addEventListener('error', e => console.error('[ZENITH] error:', e.error || e.message));
@@ -29,7 +31,6 @@ window.addEventListener('unhandledrejection', e => console.error('[ZENITH] promi
 
 window.__zenithCaptureHashes = captureCurrentHashes;
 window.__zenithNotifyChange = notifyChange;
-
 window.__zenithHasDownloadedThisSession = false;
 
 function createLoadOverlay(){
@@ -225,8 +226,10 @@ registerRoute('config',    configView);
 registerRoute('ballonDor', ballonDorView);
 registerRoute('market',    marketView);
 registerRoute('performance', performanceView);
-registerRoute('contracts', contractsView); // <-- NUEVO
-registerRoute('coaches', coachesView); // <-- NUEVO
+registerRoute('contracts', contractsView);
+registerRoute('coaches', coachesView);
+registerRoute('requests', requestsView);
+registerRoute('warnings', warningsView);
 
 let _currentViewFn = null;
 let _currentParams = [];
@@ -259,8 +262,10 @@ function renderView(viewFn, params){
     safeBind(bindBallonDorEvents);
     safeBind(bindMarketEvents);
     safeBind(bindPerformanceEvents);
-    safeBind(bindContractsEvents); // <-- NUEVO
-    safeBind(bindCoachesEvents); // <-- NUEVO
+    safeBind(bindContractsEvents);
+    safeBind(bindCoachesEvents);
+    safeBind(bindRequestsEvents);
+    safeBind(bindWarningsEvents);
 
     updateActiveNav();
     updateDivisionHeader();
