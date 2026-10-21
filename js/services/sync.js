@@ -1,19 +1,9 @@
-// ============================================================
-// SYNC SERVICE — Sincronización en tiempo real con Supabase
-// ============================================================
 import { downloadAll, pushTables, subscribeRealtime, unsubscribeRealtime } from './supabase.js';
 
 const TABLE_TO_KEY = {
-  seasons: 'seasons',
-  divisions: 'divisions',
-  teams: 'teams',
-  players: 'players',
-  coaches: 'coaches', // <-- LA LÍNEA QUE FALTABA
-  matches: 'matches',
-  playoffs: 'playoffs',
-  news: 'news',
-  archived_seasons: 'archivedSeasons',
-  config: 'config'
+  seasons: 'seasons', divisions: 'divisions', teams: 'teams', players: 'players',
+  coaches: 'coaches', matches: 'matches', playoffs: 'playoffs', news: 'news',
+  archived_seasons: 'archivedSeasons', config: 'config'
 };
 
 const PUSH_DEBOUNCE_MS = 2000;
@@ -36,8 +26,7 @@ function hashString(str) {
 }
 
 function hashTable(data) {
-  try { return hashString(JSON.stringify(data ?? null)); }
-  catch(_) { return 'err'; }
+  try { return hashString(JSON.stringify(data ?? null)); } catch(_) { return 'err'; }
 }
 
 export function captureCurrentHashes() {
@@ -46,10 +35,7 @@ export function captureCurrentHashes() {
   const hashes = {};
   Object.entries(TABLE_TO_KEY).forEach(([table, key]) => {
     if (key === 'config') {
-      hashes[table] = hashTable({
-        config: db.config, widgets: db.widgets, trophies: db.trophies,
-        transferLog: db.transferLog, transferBannerBg: db.transferBannerBg
-      });
+      hashes[table] = hashTable({ config: db.config, widgets: db.widgets, trophies: db.trophies, transferLog: db.transferLog, transferBannerBg: db.transferBannerBg });
     } else {
       hashes[table] = hashTable(db[key]);
     }
@@ -68,7 +54,6 @@ function detectDirty(oldHashes, newHashes) {
 export function notifyChange(oldHashes, newHashes) {
   const dirty = detectDirty(oldHashes, newHashes);
   if (dirty.length === 0) return;
-
   dirty.forEach(t => _dirtyTables.add(t));
   updateSyncChip('pending');
   schedulePush();
@@ -76,9 +61,7 @@ export function notifyChange(oldHashes, newHashes) {
 
 function schedulePush() {
   if (_pushTimer) clearTimeout(_pushTimer);
-  _pushTimer = setTimeout(() => {
-    doPush().catch(err => console.error('[SYNC] push error:', err));
-  }, PUSH_DEBOUNCE_MS);
+  _pushTimer = setTimeout(() => { doPush().catch(err => console.error('[SYNC] push error:', err)); }, PUSH_DEBOUNCE_MS);
 }
 
 async function doPush() {
@@ -117,7 +100,6 @@ function onRemoteChange(table) {
   if (Date.now() < _realtimeCooldownUntil) return;
   if (_isPushing) return;
 
-  console.log('[SYNC] Cambio remoto en:', table);
   if (_realtimeDebounce) clearTimeout(_realtimeDebounce);
   _realtimeDebounce = setTimeout(() => {
     pullFromRemote().catch(err => console.error('[SYNC] pull error:', err));
@@ -130,16 +112,18 @@ async function pullFromRemote() {
     const remoteDB = await downloadAll();
     const localRaw = window.__zenithGetRawDB ? window.__zenithGetRawDB() : null;
 
+    // RED DE SEGURIDAD: Si el servidor devuelve 0 coaches pero tenemos locales, los conservamos
+    if (remoteDB.coaches.length === 0 && localRaw?.coaches?.length > 0) {
+      remoteDB.coaches = localRaw.coaches;
+    }
+
     const merged = {
       ...remoteDB,
       viewSeasonId: localRaw?.viewSeasonId || null
     };
 
     if (window.__zenithSetRawDB) window.__zenithSetRawDB(merged);
-
-    if (window.__zenithCaptureHashes) {
-      window.__zenithCaptureHashes();
-    }
+    if (window.__zenithCaptureHashes) window.__zenithCaptureHashes();
 
     updateSyncChip('synced');
     window.dispatchEvent(new CustomEvent('zenith:sync-pulled'));
@@ -181,10 +165,5 @@ export async function forcePush() {
 }
 
 export function getSyncState() {
-  return {
-    dirtyCount: _dirtyTables.size,
-    lastPushAt: _lastPushAt,
-    isPushing: _isPushing,
-    isOnline: navigator.onLine
-  };
+  return { dirtyCount: _dirtyTables.size, lastPushAt: _lastPushAt, isPushing: _isPushing, isOnline: navigator.onLine };
 }
