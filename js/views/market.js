@@ -2,19 +2,14 @@ import { getDB, mutate } from '../services/storage.js';
 import { uid } from '../data/database.js';
 import { openModal, closeTopModal, toast } from '../services/ui.js';
 import { generateTransferBanner } from '../services/banner.js';
+import { openTeamForm } from './teams.js';
 
 let _mktDiv  = 'all';
 let _mktType = 'all';
+let _activeTab = 'players';
 
 export function marketView(){
   const db = getDB();
-  const log = [...(db.transferLog || [])].sort((a, b) => b.date - a.date);
-
-  const filtered = log.filter(m => {
-    if (_mktDiv !== 'all' && m.toDivisionId !== _mktDiv && m.fromDivisionId !== _mktDiv) return false;
-    if (_mktType !== 'all' && m.type !== _mktType) return false;
-    return true;
-  });
 
   return `
     <div class="page-head">
@@ -24,15 +19,29 @@ export function marketView(){
           <option value="all">Todas las divisiones</option>
           ${db.divisions.map(d => `<option value="${d.id}" ${_mktDiv === d.id ? 'selected' : ''}>${d.tier || '?'}ª · ${esc(d.name)}</option>`).join('')}
         </select>
-        <select class="select" id="mkt-ftype" style="width:auto">
-          <option value="all">Todos los tipos</option>
-          <option value="transfer" ${_mktType === 'transfer' ? 'selected' : ''}>Fichajes</option>
-          <option value="free" ${_mktType === 'free' ? 'selected' : ''}>Agentes Libres</option>
-          <option value="pending" ${_mktType === 'pending' ? 'selected' : ''}>Pendientes</option>
-        </select>
       </div>
     </div>
 
+    <div class="stats-tabs" style="margin-bottom:18px">
+      <button class="stats-tab ${_activeTab === 'players' ? 'active' : ''}" data-mkt-tab="players">👤 Jugadores</button>
+      <button class="stats-tab ${_activeTab === 'staff' ? 'active' : ''}" data-mkt-tab="staff">🧑‍💼 Staff Técnico</button>
+    </div>
+
+    <div id="marketContent">
+      ${_activeTab === 'players' ? renderPlayersMarket(db) : renderStaffMarket(db)}
+    </div>
+  `;
+}
+
+function renderPlayersMarket(db){
+  const log = [...(db.transferLog || [])].sort((a, b) => b.date - a.date);
+  const filtered = log.filter(m => {
+    if (_mktDiv !== 'all' && m.toDivisionId !== _mktDiv && m.fromDivisionId !== _mktDiv) return false;
+    if (_mktType !== 'all' && m.type !== _mktType) return false;
+    return true;
+  });
+
+  return `
     <div class="card">
       <div class="card-header">
         <div class="card-title"><span class="dot">◆</span>HISTORIAL DE MOVIMIENTOS</div>
@@ -53,7 +62,7 @@ export function marketView(){
                   const player = db.players.find(p => p.id === m.playerId) || {};
                   const fromTeam = db.teams.find(t => t.id === m.fromTeamId);
                   const toTeam = db.teams.find(t => t.id === m.toTeamId);
-                  const typeLabel = m.type === 'transfer' ? 'FICHAJE' : m.type === 'free' ? 'AGENTE LIBRE' : 'PENDIENTE';
+                  const typeLabel = m.type === 'transfer' ? 'FICHAJE' : m.type === 'free' ? 'AGENTE LIBRE' : m.type === 'loan' ? 'PRÉSTAMO' : 'PENDIENTE';
                   
                   const priceVal = m.price;
                   const priceStr = priceVal !== undefined ? `$${priceVal.toLocaleString()}` : '—';
@@ -88,19 +97,119 @@ export function marketView(){
   `;
 }
 
+function renderStaffMarket(db){
+  const coaches = db.coaches || [];
+  
+  return `
+    <div class="grid grid-3">
+      ${coaches.map(c => {
+        const team = db.teams.find(t => t.id === c.teamId);
+        return `
+          <div class="card">
+            <div style="display:flex; gap:14px; align-items:center; margin-bottom:14px">
+              <div class="team-logo-box-lg" style="border-radius:50%">
+                ${c.profilePicture ? `<img src="${c.profilePicture}" class="team-logo-img" style="border-radius:50%">` : '<span class="team-logo-fallback">👤</span>'}
+              </div>
+              <div>
+                <div style="font-size:16px; font-weight:600; color:var(--silver-light)">${esc(c.name)}</div>
+                <div style="font-size:12px; color:var(--muted); margin-top:2px">${c.roleType === 'coach' ? 'Head Coach' : 'Asistente'}</div>
+                ${team ? `<div class="chip chip-accent" style="margin-top:6px;font-size:10px">${esc(team.name)}</div>` : `<div class="chip" style="margin-top:6px;font-size:10px;color:var(--gold)">AGENTE LIBRE</div>`}
+              </div>
+            </div>
+            <div class="divider"></div>
+            <div class="card-actions" style="justify-content:flex-end">
+              <button class="btn btn-sm btn-primary" data-transfer-staff="${c.id}">TRANSFERIR</button>
+            </div>
+          </div>
+        `;
+      }).join('') || '<div class="card" style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted)">No hay staff registrado.</div>'}
+    </div>
+  `;
+}
+
 export function bindMarketEvents(){
+  document.querySelectorAll('[data-mkt-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _activeTab = btn.dataset.mktTab;
+      document.querySelectorAll('[data-mkt-tab]').forEach(b => b.classList.toggle('active', b === btn));
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+  });
+
   const fd = document.getElementById('mkt-fdiv');
   if (fd) fd.addEventListener('change', () => {
     _mktDiv = fd.value;
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   });
-  const ft = document.getElementById('mkt-ftype');
-  if (ft) ft.addEventListener('change', () => {
-    _mktType = ft.value;
-    window.dispatchEvent(new HashChangeEvent('hashchange'));
-  });
+
   document.querySelectorAll('[data-mkt-news]').forEach(btn => {
     btn.addEventListener('click', () => createNewsFromTransfer(btn.dataset.mktNews));
+  });
+
+  document.querySelectorAll('[data-transfer-staff]').forEach(btn => {
+    btn.addEventListener('click', () => openStaffTransferModal(btn.dataset.transferStaff));
+  });
+}
+
+function openStaffTransferModal(coachId) {
+  const db = getDB();
+  const coach = db.coaches.find(c => c.id === coachId);
+  if (!coach) return;
+
+  const currentTeam = db.teams.find(t => t.id === coach.teamId);
+
+  openModal({
+    id: 'transfer-staff-' + coachId,
+    title: 'TRANSFERIR STAFF',
+    body: `
+      <div style="margin-bottom:14px;color:var(--muted);font-size:12px">
+        Coach actual: <strong style="color:var(--silver-light)">${esc(coach.name)}</strong>
+      </div>
+      <div class="field">
+        <label>Equipo Destino</label>
+        <select class="select" id="staff-target">
+          <option value="">— Agente Libre —</option>
+          ${db.teams.filter(t => t.id !== currentTeam?.id).map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}
+        </select>
+      </div>
+    `,
+    footer: `
+      <button class="btn btn-ghost" data-close>CANCELAR</button>
+      <button class="btn btn-primary" id="confirmStaffTransfer">CONFIRMAR</button>
+    `,
+    onMount: root => {
+      root.querySelector('#confirmStaffTransfer').addEventListener('click', () => {
+        const targetId = root.querySelector('#staff-target').value;
+        
+        mutate(d => {
+          const c = d.coaches.find(x => x.id === coachId);
+          if (!c) return;
+          
+          // Si tenía equipo, lo limpiamos
+          if (c.teamId) {
+            const oldTeam = d.teams.find(t => t.id === c.teamId);
+            if (oldTeam) {
+              if (oldTeam.coach === c.name) oldTeam.coach = '';
+              if (oldTeam.assistant === c.name) oldTeam.assistant = '';
+            }
+          }
+          
+          c.teamId = targetId || null;
+          
+          if (targetId) {
+            const newTeam = d.teams.find(t => t.id === targetId);
+            if (newTeam) {
+              if (c.roleType === 'coach') newTeam.coach = c.name;
+              if (c.roleType === 'assistant') newTeam.assistant = c.name;
+            }
+          }
+        });
+        
+        toast('Staff transferido', 'success');
+        closeTopModal();
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      });
+    }
   });
 }
 
