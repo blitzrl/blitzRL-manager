@@ -40,7 +40,6 @@ async function loadWarnings() {
 
   try {
     const sb = getSupabase();
-    // Obtenemos las advertencias
     const { data, error } = await sb.from('coach_warnings')
       .select('*')
       .order('created_at', { ascending: false });
@@ -81,13 +80,30 @@ async function loadWarnings() {
                 </div>
               ` : ''}
             </div>
-            <div>
+            <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
               <span class="badge">${status}</span>
+              <!-- NUEVO BOTÓN DE ELIMINAR -->
+              <button class="btn btn-sm btn-danger" data-del-warning="${w.id}" title="Eliminar advertencia">🗑 ELIMINAR</button>
             </div>
           </div>
         </div>
       `;
     }).join('');
+
+    // Listener para el botón eliminar
+    listEl.querySelectorAll('[data-del-warning]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('¿Eliminar esta advertencia permanentemente?')) return;
+        try {
+          const sb = getSupabase();
+          await sb.from('coach_warnings').delete().eq('id', btn.dataset.delWarning);
+          toast('Advertencia eliminada', 'success');
+          loadWarnings();
+        } catch (e) {
+          toast('Error al eliminar: ' + e.message, 'error');
+        }
+      });
+    });
 
   } catch (err) {
     console.error('[WARNINGS] Error al cargar:', err);
@@ -135,7 +151,6 @@ function openWarningModal(coaches) {
         try {
           const sb = getSupabase();
           
-          // 1. Insertar Advertencia
           const { error: wErr } = await sb.from('coach_warnings').insert({
             coach_id: coachId,
             message,
@@ -144,7 +159,6 @@ function openWarningModal(coaches) {
           });
           if (wErr) throw wErr;
 
-          // 2. Insertar Notificación para el coach
           const { error: nErr } = await sb.from('coach_notifications').insert({
             coach_id: coachId,
             type: 'admin_warning',
