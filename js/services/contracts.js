@@ -302,7 +302,7 @@ function hasPerformanceFailed(c) {
 }
 
 // ============================================================
-// 5. ALERTAS Y CONSULTAS (FUNCIÓN QUE FALTABA)
+// 5. ALERTAS Y CONSULTAS
 // ============================================================
 export function getContractAlerts() {
   const db = getDB();
@@ -345,4 +345,39 @@ export function getContractAlerts() {
   }
 
   return alerts;
+}
+
+// ============================================================
+// 6. RESOLVER RETORNO PENDIENTE (FUNCIÓN RESTAURADA)
+// ============================================================
+export function resolveAwaitingReturn(contractId) {
+  mutate(d => {
+    const c = d.contracts.find(x => x.id === contractId);
+    if (!c || c.status !== 'awaiting_return') return;
+    
+    const origin = d.teams.find(t => t.id === c.ownerTeamId);
+    if (!origin) throw new Error('El equipo de origen ya no existe');
+    if (origin.roster.length >= (d.config.rosterRules?.max || 4)) {
+      throw new Error('El equipo de origen aún no tiene espacio en el roster');
+    }
+
+    const player = d.players.find(p => p.id === c.playerId);
+    const current = d.teams.find(t => t.id === c.teamId);
+
+    if (current && current.roster.some(r => r.playerId === c.playerId)) {
+      current.roster = current.roster.filter(r => r.playerId !== c.playerId);
+    }
+
+    origin.roster.push({ playerId: c.playerId, role: 'SUPLENTE' });
+    
+    if (player) {
+      player.status = 'owned'; player.onLoan = false; player.ownerTeamId = null; player.contractId = null;
+      player.divisionId = origin.divisionId;
+    }
+    
+    c.status = 'returned'; 
+    c.terminatedAt = Date.now(); 
+    c.terminationReason = 'manual_resolution';
+    c.history.push({ ts: Date.now(), action: 'resolved_awaiting', note: 'Resuelto manualmente por el admin' });
+  });
 }
