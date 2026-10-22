@@ -35,7 +35,7 @@ export async function downloadAll() {
     sb.from('config').select('*').maybeSingle(),
     sb.from('archived_seasons').select('*'),
     sb.from('coaches').select('*'),
-    sb.from('coach_contracts').select('*') // <-- NUEVA TABLA
+    sb.from('coach_contracts').select('*')
   ]);
 
   const errors = [seasons, divisions, teams, players, matches, playoffs, news, config, archived, coaches, contracts]
@@ -151,7 +151,6 @@ export async function downloadAll() {
       teamId: r.team_id,
       ...r.data 
     })),
-    // NUEVA TABLA MAPEADA
     contracts: (contracts.data || []).map(r => ({
       id: r.id,
       playerId: r.player_id,
@@ -163,7 +162,7 @@ export async function downloadAll() {
       startSeasonId: r.start_season_id,
       endSeasonId: r.end_season_id,
       endMatchday: r.end_matchday,
-      ...r.data // Aquí entran las cláusulas y el historial
+      ...r.data 
     })),
     config: {
       rosterRules: configData.rosterRules || { starters:3, substitutes:1, max:4 },
@@ -307,7 +306,6 @@ export async function pushTables(tables) {
         }));
         results.stats.archived_seasons = (db.archivedSeasons || []).length;
       }
-      // NUEVA TABLA A SUBIR
       else if (tableName === 'coach_contracts') {
         await replaceTable(sb, 'coach_contracts', db.contracts || [], c => ({
           id: c.id,
