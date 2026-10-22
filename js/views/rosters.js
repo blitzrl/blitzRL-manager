@@ -5,7 +5,7 @@ import { getRankColor, getRankLabel } from '../data/nations.js';
 import { computeStandings } from '../services/standings.js';
 import { renderVitrina } from '../services/trophies.js';
 import { openTransferModal } from '../services/transfers.js';
-import { showCoachProfile } from './coaches.js'; // <-- AÑADIDO
+import { showCoachProfile } from './coaches.js';
 
 let _searchQuery = '';
 
@@ -99,7 +99,7 @@ function teamCardMini(t){
               <div style="font-size:10.5px;color:var(--muted)">${p.platform || '—'} · ${p.rank || '—'}${p.rankDivision && p.rank!=='SSL' ? ' ' + p.rankDivision : ''}</div>
             </div>
           </div>
-          <span class="badge ${r.role==='CAPITÁN'?'badge-gold':''}">${r.role}</span>
+          <span class="badge ${r.role==='CAPITÁN'?'badge-gold':''} ${r.role==='AUXILIAR'?'badge-live':''}">${r.role}</span>
         </div>`;
       }).join('')}
       <div style="margin-top:12px;text-align:right;font-size:10.5px;color:var(--accent);letter-spacing:.14em">VER EQUIPO →</div>
@@ -176,7 +176,7 @@ function teamProfileView(team){
                     ? `<img class="roster-avatar" src="${p.profilePicture}">`
                     : `<div class="roster-avatar roster-avatar-empty">${(p.name||'?').slice(0,2).toUpperCase()}</div>`}
                   <span style="color:${rankColor};font-size:14px">${p.name||'?'}</span>
-                  <span class="badge ${r.role==='CAPITÁN'?'badge-gold':''}">${r.role}</span>
+                  <span class="badge ${r.role==='CAPITÁN'?'badge-gold':''} ${r.role==='AUXILIAR'?'badge-live':''}">${r.role}</span>
                 </div>
                 <div style="font-size:11px;color:var(--muted);margin-top:3px;padding-left:34px">
                   ${p.platform||'—'} · ${rankLine}
@@ -231,17 +231,11 @@ export function bindRostersEvents(){
     card.addEventListener('click', ()=>{ location.hash = '#/rosters/' + card.dataset.teamProfile; }));
 
   document.querySelectorAll('[data-show-coach]').forEach(el => {
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-      showCoachProfile(el.dataset.showCoach);
-    });
+    el.addEventListener('click', (e) => { e.stopPropagation(); showCoachProfile(el.dataset.showCoach); });
   });
 
   document.querySelectorAll('[data-fichar-free-agent]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-       e.stopPropagation();
-       openTransferModal(btn.dataset.ficharFreeAgent);
-    });
+    btn.addEventListener('click', (e) => { e.stopPropagation(); openTransferModal(btn.dataset.ficharFreeAgent); });
   });
 
   document.querySelectorAll('[data-open-player]').forEach(row => {
@@ -259,11 +253,7 @@ export function bindRostersEvents(){
       const cards = document.querySelectorAll('[data-searchable]');
       cards.forEach(card => {
         const text = card.dataset.searchable;
-        if (text.includes(_searchQuery)) {
-          card.style.display = ''; 
-        } else {
-          card.style.display = 'none'; 
-        }
+        card.style.display = text.includes(_searchQuery) ? '' : 'none';
       });
     });
   }
