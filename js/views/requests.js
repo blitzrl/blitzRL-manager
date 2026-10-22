@@ -50,10 +50,8 @@ async function loadRequests() {
     for (const req of acceptedTransfers) {
       const payload = req.payload;
       try {
-        // Ejecutamos el traspaso con la lógica del Gestor
         doTransferPlayer(payload.playerId, req.from_team_id, false, payload.uniquePrice || payload.price);
         
-        // Creamos el contrato con las cláusulas pactadas
         createContract({
           playerId: payload.playerId,
           type: 'permanent',
@@ -70,7 +68,6 @@ async function loadRequests() {
           autoReturnOnElimination: true
         });
         
-        // Marcamos como aprobada en la BD
         await sb.from('coach_requests').update({ 
           status: 'approved_by_admin',
           admin_response_at: new Date().toISOString(),
@@ -85,7 +82,6 @@ async function loadRequests() {
     }
 
     _requests = data.filter(r => {
-      // Si ya se auto-ejecutó, lo ocultamos de la lista
       if (r.type === 'transfer_offer' && r.status === 'accepted_by_target') return false; 
       return true;
     });
@@ -203,29 +199,32 @@ async function approveRequest(reqId) {
       });
     }
     
-    const sb = getSupabase();
-    await sb.from('coach_requests').update({ 
-      status: 'approved_by_admin',
-      admin_response_at: new Date().toISOString()
-    }).eq('id', reqId);
+    await updateRequestStatus(reqId, 'approved_by_admin', 'Aprobado por el administrador');
     
-    toast('✅ Solicitud aprobada y ejecutada', 'success');
-    loadRequests();
   } catch (e) {
     toast('Error al ejecutar: ' + e.message, 'error');
   }
 }
 
 async function rejectRequest(reqId) {
+  await updateRequestStatus(reqId, 'rejected_by_admin', 'Rechazado por el administrador');
+}
+
+async function updateRequestStatus(reqId, status, note) {
   try {
     const sb = getSupabase();
-    await sb.from('coach_requests').update({ 
-      status: 'rejected_by_admin',
-      admin_response_at: new Date().toISOString()
+    const { error } = await sb.from('coach_requests').update({ 
+      status: status,
+      admin_response_at: new Date().toISOString(),
+      admin_response_note: note
     }).eq('id', reqId);
-    toast('Solicitud rechazada', 'success');
+    
+    if (error) throw error;
+    
+    toast('Solicitud procesada', 'success');
     loadRequests();
   } catch (e) {
-    toast('Error: ' + e.message, 'error');
+    console.error(e);
+    toast('Error al actualizar estado: ' + e.message, 'error');
   }
 }
