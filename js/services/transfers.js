@@ -95,7 +95,6 @@ export function doFreeAgent(playerId){
   }
 }
 
-// Función de Transferencia Directa (Usada para auto-aprobaciones o traspasos sin cláusulas)
 export function doTransferPlayer(playerId, targetTeamId, forceReset, customPrice = null){
   try {
     const db = getDB();
