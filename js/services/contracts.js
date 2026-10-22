@@ -12,7 +12,7 @@ export function createContract(payload) {
     uniquePrice, perMatchdayPrice, chargeEvenIfNotPlayed,
     performanceEnabled, performanceTargets,
     renewalOptionEnabled, renewalPrice,
-    sellOnClauses, // NUEVO: Array de cláusulas
+    sellOnClauses,
     autoReturnOnElimination
   } = payload;
 
@@ -30,20 +30,18 @@ export function createContract(payload) {
     const origin = d.teams.find(t => t.id === ownerTeamId);
     const target = d.teams.find(t => t.id === currentTeamId);
 
-    // Calcular fecha de fin
     const currentMatchday = Math.max(0, ...d.matches.filter(m => m.status === 'finished').map(m => m.matchday));
     const endMatchday = currentMatchday + (durationMatchdays || 0);
     
-    // Nueva estructura de contrato
     const contract = {
       id: contractId,
       type, // 'loan' | 'permanent'
       status: 'active',
       playerId,
       ownerTeamId,
-      teamId: currentTeamId, // El equipo donde jugará
+      teamId: currentTeamId,
       startSeasonId: activeSeason.id,
-      endSeasonId: activeSeason.id, // Nota: Si dura temporadas enteras, aquí se calcula con la lógica del Gestor de temporadas.
+      endSeasonId: activeSeason.id,
       durationSeasons: parseInt(durationSeasons) || 1,
       durationMatchdays: parseInt(durationMatchdays) || 0,
       endMatchday: endMatchday,
@@ -53,13 +51,13 @@ export function createContract(payload) {
         performance: {
           enabled: performanceEnabled,
           targets: performanceTargets || {},
-          onFail: 'free_agent' // Los fichajes fallidos se van a agentes libres
+          onFail: 'free_agent'
         },
         renewalOption: {
           enabled: renewalOptionEnabled,
           price: renewalPrice || 0
         },
-        sellOnClauses: sellOnClauses || [] // Array de { originalTeamId, percentage, remainingSales, status }
+        sellOnClauses: sellOnClauses || []
       },
       stats: {
         matchdaysCharged: 0, totalCharged: 0, gamesPlayed: 0,
@@ -72,7 +70,6 @@ export function createContract(payload) {
 
     d.contracts.push(contract);
 
-    // Lógica según tipo
     if (type === 'loan') {
       if (origin) origin.roster = origin.roster.filter(r => r.playerId !== playerId);
       if (target) {
@@ -109,11 +106,10 @@ export function createContract(payload) {
       
       p.status = 'owned';
       p.onLoan = false;
-      p.ownerTeamId = currentTeamId; // Ahora el dueño es el nuevo equipo
+      p.ownerTeamId = currentTeamId;
       p.contractId = contractId;
       if (target) p.divisionId = target.divisionId;
 
-      // Transferencia de dinero
       if (uniquePrice > 0 && target && origin) {
         recordTransactionInDB(d, { teamId: target.id, type: 'transfer', amount: -uniquePrice, reason: `Fichaje: ${p.name}` });
         recordTransactionInDB(d, { teamId: origin.id, type: 'transfer', amount: +uniquePrice, reason: `Venta: ${p.name}` });
@@ -151,7 +147,6 @@ export function processContractMatchday(match) {
       if (!c) return;
       const player = d.players.find(p => p.id === c.playerId);
 
-      // A) Cobro por jornada (Solo Préstamos)
       if (c.type === 'loan' && c.clauses.perMatchday.enabled) {
         const played = match.games.some(g => 
           (g.players || []).some(p => p.playerId === c.playerId)
@@ -164,7 +159,6 @@ export function processContractMatchday(match) {
         }
       }
 
-      // B) Acumular Stats (Préstamos y Fichajes)
       if (c.clauses.performance.enabled) {
         match.games.forEach(g => {
           (g.players || []).filter(p => p.playerId === c.playerId).forEach(p => {
@@ -178,13 +172,11 @@ export function processContractMatchday(match) {
         c.stats.efficiency = c.stats.shots > 0 ? +((c.stats.goals / c.stats.shots) * 100).toFixed(1) : 0;
       }
 
-      // C) Verificar Expiración (Solo por jornadas por ahora. La expiración por temporada se maneja en el cierre de temporada)
       const activeSeason = d.seasons.find(s => s.active);
       if (activeSeason && c.endMatchday > 0 && match.matchday >= c.endMatchday && match.seasonId === c.endSeasonId) {
         finalizeContractInternal(d, c, 'contract_complete');
       }
       
-      // D) Verificar Rendimiento (Si es el último partido del contrato o fin de temporada)
       if (c.clauses.performance.enabled && hasPerformanceFailed(c) && match.matchday >= c.endMatchday) {
         finalizeContractInternal(d, c, 'performance_failed');
       }
@@ -213,7 +205,7 @@ export function processTeamElimination(divisionId, teamId) {
 }
 
 // ============================================================
-// 4. FINALIZACIÓN Y PAGO DE CLÁUSULAS (Futura Venta)
+// 4. FINALIZACIÓN Y PAGO DE CLÁUSULAS
 // ============================================================
 export function finalizeContractInternal(d, contract, reason) {
   const player = d.players.find(p => p.id === contract.playerId);
@@ -221,7 +213,6 @@ export function finalizeContractInternal(d, contract, reason) {
   const current = d.teams.find(t => t.id === contract.teamId);
   const maxRoster = d.config.rosterRules?.max || 4;
 
-  // ---- Lógica de futura venta (Si se está ejecutando una transferencia de este jugador) ----
   if (reason === 'transfer_executed') {
     const sellPrice = contract.transferPrice || 0;
     const clauses = contract.clauses.sellOnClauses || [];
@@ -240,7 +231,6 @@ export function finalizeContractInternal(d, contract, reason) {
     });
   }
 
-  // ---- Lógica de fin de contrato (Fichajes) ----
   if (contract.type === 'permanent') {
     contract.status = 'expired';
     contract.terminatedAt = Date.now();
@@ -254,7 +244,6 @@ export function finalizeContractInternal(d, contract, reason) {
     }
     if (current) current.roster = current.roster.filter(r => r.playerId !== contract.playerId);
 
-    // Notificar al Admin (El gestor se encargará de mostrarlo)
     d.config.alerts = d.config.alerts || [];
     d.config.alerts.push({
       type: 'contract_expired',
@@ -264,7 +253,6 @@ export function finalizeContractInternal(d, contract, reason) {
     return;
   }
 
-  // ---- Lógica de fin de préstamo ----
   if (reason === 'buy_executed' || reason === 'mandatory_buy') {
     contract.status = 'bought';
     if (player) {
@@ -293,7 +281,6 @@ export function finalizeContractInternal(d, contract, reason) {
     return;
   }
 
-  // Regreso Normal
   if (current) current.roster = current.roster.filter(r => r.playerId !== contract.playerId);
   origin.roster.push({ playerId: contract.playerId, role: 'SUPLENTE' });
   if (player) {
@@ -312,4 +299,50 @@ function hasPerformanceFailed(c) {
   if (t.saves?.enabled && s.saves < t.saves.min) return true;
   if (t.efficiency?.enabled && s.efficiency < t.efficiency.min) return true;
   return false;
+}
+
+// ============================================================
+// 5. ALERTAS Y CONSULTAS (FUNCIÓN QUE FALTABA)
+// ============================================================
+export function getContractAlerts() {
+  const db = getDB();
+  const activeSeason = db.seasons.find(s => s.active);
+  const currentMatchday = Math.max(0, ...db.matches.filter(m => m.status === 'finished').map(m => m.matchday));
+  
+  const alerts = [];
+
+  for (const c of db.contracts) {
+    if (c.status === 'awaiting_return') {
+      const player = db.players.find(p => p.id === c.playerId);
+      const origin = db.teams.find(t => t.id === c.ownerTeamId);
+      alerts.push({
+        id: 'awaiting_' + c.id,
+        type: 'awaiting_return',
+        severity: 'danger',
+        contractId: c.id,
+        playerName: player?.name || '?',
+        teamName: origin?.name || '?',
+        message: `Esperando regreso a ${origin?.name || '?'}. El roster está lleno.`,
+        action: 'resolve'
+      });
+    }
+    
+    if (c.status === 'active' && c.type === 'loan') {
+      if (c.endSeasonId === activeSeason?.id && (c.endMatchday - currentMatchday) <= 2 && (c.endMatchday - currentMatchday) >= 0) {
+        const player = db.players.find(p => p.id === c.playerId);
+        alerts.push({
+          id: 'expiring_' + c.id,
+          type: 'expiring',
+          severity: 'warn',
+          contractId: c.id,
+          playerName: player?.name || '?',
+          teamName: db.teams.find(t => t.id === c.teamId)?.name || '?',
+          message: `Faltan ${c.endMatchday - currentMatchday} jornadas para que finalice.`,
+          action: null
+        });
+      }
+    }
+  }
+
+  return alerts;
 }
