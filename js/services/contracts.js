@@ -3,6 +3,17 @@ import { uid } from '../data/database.js';
 import { recordTransactionInDB } from './economy.js';
 
 // ============================================================
+// FUNCIÓN AUXILIAR: Calcular la jornada actual de un equipo
+// ============================================================
+function getTeamCurrentMatchday(teamId, db) {
+  if (!teamId) return 0;
+  const teamMatches = db.matches.filter(m => 
+    (m.teamAId === teamId || m.teamBId === teamId) && m.status === 'finished'
+  );
+  return Math.max(0, ...teamMatches.map(m => m.matchday));
+}
+
+// ============================================================
 // 1. CREAR CONTRATO / PRÉSTAMO / FICHAJE
 // ============================================================
 export function createContract(payload) {
@@ -30,7 +41,9 @@ export function createContract(payload) {
     const origin = d.teams.find(t => t.id === ownerTeamId);
     const target = d.teams.find(t => t.id === currentTeamId);
 
-    const currentMatchday = Math.max(0, ...d.matches.filter(m => m.status === 'finished').map(m => m.matchday));
+    // CALCULAMOS LA JORNADA EN BASE AL EQUIPO DESTINO (El que recibe al jugador)
+    const currentMatchday = getTeamCurrentMatchday(currentTeamId, d);
+    
     // Si es un préstamo solo por jornadas, la temporada es 0 para que no diga "1 Temp"
     const isMatchdaysOnly = durationMatchdays > 0 && (!durationSeasons || durationSeasons <= 1);
     const cDurationSeasons = isMatchdaysOnly ? 0 : (parseInt(durationSeasons) || 1);
@@ -158,9 +171,7 @@ export function processContractMatchday(match) {
         );
         
         if (c.clauses.perMatchday.chargeEvenIfNotPlayed || played) {
-          // Restar al equipo receptor (Monterrey)
           recordTransactionInDB(d, { teamId: c.teamId, type: 'loan_matchday', amount: -c.clauses.perMatchday.amount, reason: `Préstamo J${match.matchday}: ${player?.name}` });
-          // Sumar al equipo dueño (Atlas)
           recordTransactionInDB(d, { teamId: c.ownerTeamId, type: 'loan_matchday', amount: +c.clauses.perMatchday.amount, reason: `Ingreso Préstamo J${match.matchday}: ${player?.name}` });
           
           c.stats.matchdaysCharged++;
@@ -184,7 +195,10 @@ export function processContractMatchday(match) {
 
       // C) EXPIRACIÓN Y RETORNO AUTOMÁTICO
       const activeSeason = d.seasons.find(s => s.active);
-      if (activeSeason && c.endMatchday > 0 && match.matchday >= c.endMatchday && match.seasonId === c.endSeasonId) {
+      
+      // El match.matchday es la jornada del equipo que acaba de jugar. Si es >= a la fecha de fin, se devuelve.
+      if (activeSeason && c.endMatchday > 0 && match.matchday >= c.endMatchday) {
+        console.log(`[Contract] Fin de contrato para ${player?.name}. Jornada actual ${match.matchday} >= ${c.endMatchday}. Retornando...`);
         finalizeContractInternal(d, c, 'contract_complete');
       } else if (c.clauses.performance.enabled && hasPerformanceFailed(c) && match.matchday >= c.endMatchday) {
         finalizeContractInternal(d, c, 'performance_failed');
@@ -300,6 +314,7 @@ export function finalizeContractInternal(d, contract, reason) {
     contract.status = 'awaiting_return';
     contract.awaitingReturnSince = Date.now();
     if (player) { player.status = 'awaiting_return'; player.pendingTeamId = origin.id; }
+    console.log(`[Contract] ${player?.name} quiere volver a ${origin.name} pero el roster está lleno. Estado: awaiting_return.`);
     return;
   }
 
@@ -329,6 +344,7 @@ export function finalizeContractInternal(d, contract, reason) {
   contract.status = 'returned'; 
   contract.terminatedAt = Date.now(); 
   contract.terminationReason = reason;
+  console.log(`[Contract] ${player?.name} ha regresado exitosamente a ${origin.name}.`);
 }
 
 function hasPerformanceFailed(c) {
@@ -348,7 +364,6 @@ function hasPerformanceFailed(c) {
 export function getContractAlerts() {
   const db = getDB();
   const activeSeason = db.seasons.find(s => s.active);
-  const currentMatchday = Math.max(0, ...db.matches.filter(m => m.status === 'finished').map(m => m.matchday));
   
   const alerts = [];
 
@@ -360,7 +375,10 @@ export function getContractAlerts() {
     }
     
     if (c.status === 'active' && c.type === 'loan') {
-      const restantes = c.endMatchday - currentMatchday;
+      // Calculamos la jornada actual del equipo específico que tiene al jugador prestado
+      const teamCurrentMatchday = getTeamCurrentMatchday(c.teamId, db);
+      const restantes = c.endMatchday - teamCurrentMatchday;
+      
       if (c.endSeasonId === activeSeason?.id && restantes <= 2 && restantes >= 0) {
         const player = db.players.find(p => p.id === c.playerId);
         alerts.push({ 
