@@ -50,8 +50,10 @@ async function loadRequests() {
     for (const req of acceptedTransfers) {
       const payload = req.payload;
       try {
+        // Ejecutamos el traspaso con la lógica del Gestor
         doTransferPlayer(payload.playerId, req.from_team_id, false, payload.uniquePrice || payload.price);
         
+        // Creamos el contrato con las cláusulas pactadas
         createContract({
           playerId: payload.playerId,
           type: 'permanent',
@@ -68,6 +70,7 @@ async function loadRequests() {
           autoReturnOnElimination: true
         });
         
+        // Marcamos como aprobada en la BD
         await sb.from('coach_requests').update({ 
           status: 'approved_by_admin',
           admin_response_at: new Date().toISOString(),
@@ -82,6 +85,7 @@ async function loadRequests() {
     }
 
     _requests = data.filter(r => {
+      // Si ya se auto-ejecutó, lo ocultamos de la lista
       if (r.type === 'transfer_offer' && r.status === 'accepted_by_target') return false; 
       return true;
     });
