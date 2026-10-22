@@ -51,6 +51,7 @@ async function loadRequests() {
       const payload = req.payload;
       try {
         doTransferPlayer(payload.playerId, req.from_team_id, false, payload.uniquePrice || payload.price);
+        
         createContract({
           playerId: payload.playerId, type: 'permanent', currentTeamId: req.from_team_id, ownerTeamId: req.to_team_id,
           durationSeasons: payload.durationSeasons || 1, durationMatchdays: payload.durationMatchdays || 0,
@@ -58,7 +59,11 @@ async function loadRequests() {
           performanceTargets: payload.performanceTargets || {}, renewalOptionEnabled: payload.renewalOptionEnabled || false,
           renewalPrice: payload.renewalPrice || 0, sellOnClauses: payload.sellOnClauses || [], autoReturnOnElimination: true
         });
-        await sb.from('coach_requests').update({ status: 'approved_by_admin', admin_response_at: new Date().toISOString(), admin_response_note: 'Auto-aprobado' }).eq('id', req.id);
+        
+        await sb.from('coach_requests').update({ 
+          status: 'approved_by_admin', admin_response_at: new Date().toISOString(), admin_response_note: 'Auto-aprobado por fichaje directo'
+        }).eq('id', req.id);
+        
         toast(`💰 Fichaje automático: ${payload.playerName} transferido`, 'success');
       } catch (err) {
         toast('Error auto-fichaje: ' + err.message, 'error');
@@ -106,10 +111,12 @@ function renderRequestCard(req) {
 
   let clausesHTML = '';
   if (req.type === 'lineup_change') {
-    clausesHTML = `<div><b>Jugadores:</b> ${payload.newLineup?.length || 0} (Actualización de roles)</div>`;
+    clausesHTML = `<div><b>Jugadores involucrados:</b> ${payload.newLineup?.length || 0} (Actualización de roles)</div>`;
   } else {
-    if (payload.durationSeasons) clausesHTML += `<div><b>Duración:</b> ${payload.durationSeasons} Temporadas</div>`;
+    if (payload.durationSeasons) clausesHTML += `<div><b>Duración:</b> ${payload.durationSeasons} Temporadas ${payload.durationMatchdays ? `+ ${payload.durationMatchdays} Jornadas` : ''}</div>`;
     if (payload.uniquePrice > 0) clausesHTML += `<div><b>Precio:</b> $${payload.uniquePrice.toLocaleString('en-US')}</div>`;
+    if (payload.sellOnClause) clausesHTML += `<div><b>Futura Venta:</b> ${payload.sellOnPercentage}% x ${payload.sellOnSales} ventas</div>`;
+    if (payload.performanceEnabled) clausesHTML += `<div><b>Metas:</b> ${payload.performanceTargets.goals?.enabled ? 'Goles ' + payload.performanceTargets.goals.min : ''} ${payload.performanceTargets.assists?.enabled ? 'Asist ' + payload.performanceTargets.assists.min : ''}</div>`;
   }
 
   const statusLabel = req.status === 'pending' ? 'ESPERANDO' : 'ACEPTADO (APROBACIÓN)';
@@ -126,7 +133,16 @@ function renderRequestCard(req) {
             <div><b>Jugador:</b> ${payload.playerName || 'Múltiples'}</div>
             ${clausesHTML}
           </div>
-          <div style="font-size:11px; color:var(--muted);">Solicitado por ${coach}</div>
+          
+          ${payload.customMessage ? `
+            <div style="font-size:12px; color:var(--accent); font-style:italic; padding:8px; border-left:2px solid var(--accent); background:rgba(111,168,255,0.05); margin-bottom:8px;">
+              "${payload.customMessage}"
+            </div>
+          ` : ''}
+          
+          <div style="font-size:11px; color:var(--muted);">
+            Solicitado por ${coach} el ${new Date(req.created_at).toLocaleString()}
+          </div>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <span class="badge ${badgeClass}">${statusLabel}</span>
@@ -141,12 +157,18 @@ function renderRequestCard(req) {
 }
 
 export function bindRequestsEvents() {
-  document.getElementById('btnRefreshRequests')?.addEventListener('click', () => loadRequests());
+  document.getElementById('btnRefreshRequests')?.addEventListener('click', () => {
+    loadRequests();
+  });
 }
 
 function bindRequestButtons() {
-  document.querySelectorAll('[data-approve-req]').forEach(btn => btn.addEventListener('click', () => approveRequest(btn.dataset.approveReq)));
-  document.querySelectorAll('[data-reject-req]').forEach(btn => btn.addEventListener('click', () => rejectRequest(btn.dataset.rejectReq)));
+  document.querySelectorAll('[data-approve-req]').forEach(btn => {
+    btn.addEventListener('click', () => approveRequest(btn.dataset.approveReq));
+  });
+  document.querySelectorAll('[data-reject-req]').forEach(btn => {
+    btn.addEventListener('click', () => rejectRequest(btn.dataset.rejectReq));
+  });
 }
 
 async function approveRequest(reqId) {
@@ -156,16 +178,13 @@ async function approveRequest(reqId) {
   const payload = req.payload;
   try {
     if (req.type === 'lineup_change') {
-      // Aplicar la nueva alineación en la DB
       mutate(d => {
         const team = d.teams.find(t => t.id === req.from_team_id);
         if (team) team.roster = payload.newLineup;
       });
     } 
     else if (req.type === 'free_agent_sign') {
-      // Ejecutar el fichaje del agente libre y crear su contrato
       const player = getDB().players.find(p => p.id === payload.playerId);
-      const team = getDB().teams.find(t => t.id === req.from_team_id);
       
       doTransferPlayer(payload.playerId, req.from_team_id, false, player?.marketValue || 0);
       
@@ -187,24 +206,31 @@ async function approveRequest(reqId) {
     }
     
     await updateRequestStatus(reqId, 'approved_by_admin', 'Aprobado por el admin');
+    
   } catch (e) {
     toast('Error al ejecutar: ' + e.message, 'error');
   }
 }
 
 async function rejectRequest(reqId) {
-  await updateRequestStatus(reqId, 'rejected_by_admin', 'Rechazado');
+  await updateRequestStatus(reqId, 'rejected_by_admin', 'Rechazado por el administrador');
 }
 
 async function updateRequestStatus(reqId, status, note) {
   try {
     const sb = getSupabase();
-    await sb.from('coach_requests').update({ 
-      status: status, admin_response_at: new Date().toISOString(), admin_response_note: note
+    const { error } = await sb.from('coach_requests').update({ 
+      status: status,
+      admin_response_at: new Date().toISOString(),
+      admin_response_note: note
     }).eq('id', reqId);
+    
+    if (error) throw error;
+    
     toast('Solicitud procesada', 'success');
     loadRequests();
   } catch (e) {
-    toast('Error al actualizar: ' + e.message, 'error');
+    console.error(e);
+    toast('Error al actualizar estado: ' + e.message, 'error');
   }
 }
