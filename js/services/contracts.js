@@ -31,7 +31,10 @@ export function createContract(payload) {
     const target = d.teams.find(t => t.id === currentTeamId);
 
     const currentMatchday = Math.max(0, ...d.matches.filter(m => m.status === 'finished').map(m => m.matchday));
-    const endMatchday = currentMatchday + (durationMatchdays || 0);
+    // Si es un préstamo solo por jornadas, la temporada es 0 para que no diga "1 Temp"
+    const isMatchdaysOnly = durationMatchdays > 0 && (!durationSeasons || durationSeasons <= 1);
+    const cDurationSeasons = isMatchdaysOnly ? 0 : (parseInt(durationSeasons) || 1);
+    const endMatchday = currentMatchday + (parseInt(durationMatchdays) || 0);
     
     const contract = {
       id: contractId,
@@ -39,10 +42,10 @@ export function createContract(payload) {
       status: 'active',
       playerId,
       ownerTeamId,
-      teamId: currentTeamId,
+      teamId: currentTeamId, // El equipo donde jugará
       startSeasonId: activeSeason.id,
       endSeasonId: activeSeason.id,
-      durationSeasons: parseInt(durationSeasons) || 1,
+      durationSeasons: cDurationSeasons,
       durationMatchdays: parseInt(durationMatchdays) || 0,
       endMatchday: endMatchday,
       transferPrice: uniquePrice || 0,
@@ -55,7 +58,7 @@ export function createContract(payload) {
       stats: { matchdaysCharged: 0, totalCharged: 0, gamesPlayed: 0, goals: 0, assists: 0, saves: 0, shots: 0, efficiency: 0 },
       autoReturnOnElimination,
       createdAt: Date.now(),
-      history: [{ ts: Date.now(), action: 'created', note: type === 'loan' ? `Préstamo a ${target?.name}` : `Fichaje por ${target?.name}` }]
+      history: [{ ts: Date.now(), action: 'created', note: type === 'loan' ? `Préstamo a ${target?.name} por ${durationMatchdays}J` : `Fichaje por ${target?.name}` }]
     };
 
     d.contracts.push(contract);
@@ -148,17 +151,24 @@ export function processContractMatchday(match) {
       if (!c) return;
       const player = d.players.find(p => p.id === c.playerId);
 
-      // Cobro por jornada (Solo Préstamos)
+      // A) COBRO POR JORNADA (Solo Préstamos)
       if (c.type === 'loan' && c.clauses.perMatchday.enabled) {
-        const played = match.games.some(g => (g.players || []).some(p => p.playerId === c.playerId));
+        const played = match.games.some(g => 
+          (g.players || []).some(p => p.playerId === c.playerId)
+        );
+        
         if (c.clauses.perMatchday.chargeEvenIfNotPlayed || played) {
+          // Restar al equipo receptor (Monterrey)
           recordTransactionInDB(d, { teamId: c.teamId, type: 'loan_matchday', amount: -c.clauses.perMatchday.amount, reason: `Préstamo J${match.matchday}: ${player?.name}` });
+          // Sumar al equipo dueño (Atlas)
+          recordTransactionInDB(d, { teamId: c.ownerTeamId, type: 'loan_matchday', amount: +c.clauses.perMatchday.amount, reason: `Ingreso Préstamo J${match.matchday}: ${player?.name}` });
+          
           c.stats.matchdaysCharged++;
           c.stats.totalCharged += c.clauses.perMatchday.amount;
         }
       }
 
-      // Acumular Stats
+      // B) Acumular Stats
       if (c.clauses.performance.enabled) {
         match.games.forEach(g => {
           (g.players || []).filter(p => p.playerId === c.playerId).forEach(p => {
@@ -172,13 +182,11 @@ export function processContractMatchday(match) {
         c.stats.efficiency = c.stats.shots > 0 ? +((c.stats.goals / c.stats.shots) * 100).toFixed(1) : 0;
       }
 
-      // EXPIRACIÓN DE CONTRATO
+      // C) EXPIRACIÓN Y RETORNO AUTOMÁTICO
       const activeSeason = d.seasons.find(s => s.active);
       if (activeSeason && c.endMatchday > 0 && match.matchday >= c.endMatchday && match.seasonId === c.endSeasonId) {
         finalizeContractInternal(d, c, 'contract_complete');
-      }
-      
-      if (c.clauses.performance.enabled && hasPerformanceFailed(c) && match.matchday >= c.endMatchday) {
+      } else if (c.clauses.performance.enabled && hasPerformanceFailed(c) && match.matchday >= c.endMatchday) {
         finalizeContractInternal(d, c, 'performance_failed');
       }
     });
@@ -215,6 +223,7 @@ export function finalizeContractInternal(d, contract, reason) {
   const maxRoster = d.config.rosterRules?.max || 4;
   const activeSeason = d.seasons.find(s => s.active);
 
+  // Pago de cláusula de futura venta (Solo si se vende)
   if (reason === 'transfer_executed') {
     const sellPrice = contract.transferPrice || 0;
     const clauses = contract.clauses.sellOnClauses || [];
@@ -227,6 +236,7 @@ export function finalizeContractInternal(d, contract, reason) {
     });
   }
 
+  // Fin de contrato permanente
   if (contract.type === 'permanent') {
     contract.status = 'expired';
     contract.terminatedAt = Date.now();
@@ -238,7 +248,6 @@ export function finalizeContractInternal(d, contract, reason) {
       player.contractId = null;
       player.divisionId = null;
       
-      // INYECTAR HISTORIAL DE FIN DE CONTRATO
       player.history = player.history || [];
       player.history.unshift({
         seasonName: activeSeason?.name || 'Actual',
@@ -252,15 +261,18 @@ export function finalizeContractInternal(d, contract, reason) {
       });
     }
     if (current) current.roster = current.roster.filter(r => r.playerId !== contract.playerId);
-
-    d.config.alerts = d.config.alerts || [];
-    d.config.alerts.push({ type: 'contract_expired', message: `El contrato de ${player?.name} con ${current?.name} ha expirado. Se ha convertido en Agente Libre.`, ts: Date.now() });
     return;
   }
 
+  // Compra obligatoria o ejecutada (Préstamos)
   if (reason === 'buy_executed' || reason === 'mandatory_buy') {
     contract.status = 'bought';
-    if (player) { player.status = 'owned'; player.onLoan = false; player.ownerTeamId = current?.id; player.contractId = null; }
+    if (player) { 
+      player.status = 'owned'; 
+      player.onLoan = false; 
+      player.ownerTeamId = current?.id; 
+      player.contractId = null; 
+    }
     if (current && origin && contract.clauses.renewalOption?.price > 0) {
       recordTransactionInDB(d, { teamId: current.id, type: 'buy_option', amount: -contract.clauses.renewalOption.price, reason: `Compra: ${player?.name}` });
       recordTransactionInDB(d, { teamId: origin.id, type: 'buy_option', amount: +contract.clauses.renewalOption.price, reason: `Venta: ${player?.name}` });
@@ -268,10 +280,18 @@ export function finalizeContractInternal(d, contract, reason) {
     return;
   }
 
+  // Si el equipo de origen fue borrado
   if (!origin) {
     if (current) current.roster = current.roster.filter(r => r.playerId !== contract.playerId);
-    if (player) { player.status = 'free_agent'; player.ownerTeamId = null; player.contractId = null; player.divisionId = null; }
-    contract.status = 'returned'; contract.terminatedAt = Date.now(); contract.terminationReason = 'origin_deleted';
+    if (player) { 
+      player.status = 'free_agent'; 
+      player.ownerTeamId = null; 
+      player.contractId = null; 
+      player.divisionId = null; 
+    }
+    contract.status = 'returned'; 
+    contract.terminatedAt = Date.now(); 
+    contract.terminationReason = 'origin_deleted';
     return;
   }
 
@@ -294,7 +314,6 @@ export function finalizeContractInternal(d, contract, reason) {
     player.contractId = null;
     player.divisionId = origin.divisionId;
     
-    // INYECTAR HISTORIAL DE RETORNO
     player.history = player.history || [];
     player.history.unshift({
       seasonName: activeSeason?.name || 'Actual',
@@ -324,7 +343,7 @@ function hasPerformanceFailed(c) {
 }
 
 // ============================================================
-// 5. ALERTAS Y CONSULTAS
+// 5. ALERTAS
 // ============================================================
 export function getContractAlerts() {
   const db = getDB();
@@ -341,9 +360,19 @@ export function getContractAlerts() {
     }
     
     if (c.status === 'active' && c.type === 'loan') {
-      if (c.endSeasonId === activeSeason?.id && (c.endMatchday - currentMatchday) <= 2 && (c.endMatchday - currentMatchday) >= 0) {
+      const restantes = c.endMatchday - currentMatchday;
+      if (c.endSeasonId === activeSeason?.id && restantes <= 2 && restantes >= 0) {
         const player = db.players.find(p => p.id === c.playerId);
-        alerts.push({ id: 'expiring_' + c.id, type: 'expiring', severity: 'warn', contractId: c.id, playerName: player?.name || '?', teamName: db.teams.find(t => t.id === c.teamId)?.name || '?', message: `Faltan ${c.endMatchday - currentMatchday} jornadas para que finalice.`, action: null });
+        alerts.push({ 
+          id: 'expiring_' + c.id, 
+          type: 'expiring', 
+          severity: 'warn', 
+          contractId: c.id, 
+          playerName: player?.name || '?', 
+          teamName: db.teams.find(t => t.id === c.teamId)?.name || '?', 
+          message: restantes === 0 ? `El contrato finaliza al terminar esta jornada.` : `Faltan ${restantes} jornadas para que finalice.`, 
+          action: null 
+        });
       }
     }
   }
@@ -379,7 +408,6 @@ export function resolveAwaitingReturn(contractId) {
       player.status = 'owned'; player.onLoan = false; player.ownerTeamId = null; player.contractId = null;
       player.divisionId = origin.divisionId;
       
-      // INYECTAR HISTORIAL DE RETORNO MANUAL
       player.history = player.history || [];
       player.history.unshift({
         seasonName: activeSeason?.name || 'Actual',
