@@ -9,6 +9,12 @@ import { showCoachProfile } from './coaches.js';
 
 let _searchQuery = '';
 
+// FUNCIÓN MÁGICA PARA ORDENAR EL ROSTER
+function sortRoster(roster) {
+  const roleOrder = { 'CAPITÁN': 1, 'TITULAR': 2, 'SUPLENTE': 3, 'AUXILIAR': 4 };
+  return [...roster].sort((a, b) => (roleOrder[a.role] || 99) - (roleOrder[b.role] || 99));
+}
+
 export function rostersView(params = []){
   const db = getDB();
   const teamId = params[0];
@@ -71,6 +77,9 @@ function teamCardMini(t){
   const coachObj = db.coaches?.find(c => c.teamId === t.id && c.roleType === 'coach');
   const assistantObj = db.coaches?.find(c => c.teamId === t.id && c.roleType === 'assistant');
 
+  // APLICAMOS EL ORDENAMIENTO AQUÍ
+  const sortedRoster = sortRoster(t.roster || []);
+
   return `
     <div class="card team-card" data-team-profile="${t.id}" data-searchable="${searchable}">
       <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
@@ -86,7 +95,7 @@ function teamCardMini(t){
         </div>
       </div>
       <div class="divider"></div>
-      ${t.roster.map(r => {
+      ${sortedRoster.map(r => {
         const p = db.players.find(x => x.id === r.playerId) || {};
         const rankColor = p.rank ? getRankColor(p.rank, p.rankLevel) : 'var(--silver)';
         return `<div class="roster-row" style="border-bottom:1px solid var(--border-soft);padding:7px 0">
@@ -128,6 +137,9 @@ function teamProfileView(team){
   const coachObj = db.coaches?.find(c => c.teamId === team.id && c.roleType === 'coach');
   const assistantObj = db.coaches?.find(c => c.teamId === team.id && c.roleType === 'assistant');
 
+  // APLICAMOS EL ORDENAMIENTO AQUÍ TAMBIÉN
+  const sortedRoster = sortRoster(team.roster || []);
+
   return `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:18px">
       <button class="btn btn-sm" onclick="location.hash='#/rosters'">← VOLVER</button>
@@ -163,7 +175,7 @@ function teamProfileView(team){
     <div class="grid grid-2" style="margin-top:18px">
       <div class="card">
         <div class="card-header"><div class="card-title"><span class="dot">◆</span>ROSTER</div></div>
-        ${team.roster.map(r => {
+        ${sortedRoster.map(r => {
           const p = db.players.find(x=>x.id===r.playerId) || {};
           const s = stats.find(x=>x.id===p.id) || {};
           const rankColor = p.rank ? getRankColor(p.rank, p.rankLevel) : 'var(--silver)';
