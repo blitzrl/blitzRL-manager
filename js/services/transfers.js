@@ -3,6 +3,7 @@ import { uid } from '../data/database.js';
 import { openModal, closeTopModal, closeAllModals, toast } from './ui.js';
 import { calculatePlayerPrice, recordTransaction } from './economy.js';
 import { aggregatePlayerStats } from './statistics.js';
+import { openSigningWizard } from '../views/signingWizard.js';
 
 export function getPlayerCurrentTeam(playerId){
   const db = getDB();
@@ -33,6 +34,7 @@ export function doDeletePlayer(playerId){
       (d.teams || []).forEach(t => {
         t.roster = (t.roster || []).filter(r => r.playerId !== playerId);
       });
+      d.contracts = (d.contracts || []).filter(c => c.playerId !== playerId);
     });
     toast('Jugador eliminado', 'success');
     closeAllModals();
@@ -69,16 +71,6 @@ export function doFreeAgent(playerId){
         });
       }
 
-      const s = pl.seasonStats || {};
-      const hasStats = (s.goals || 0) + (s.assists || 0) + (s.saves || 0) + (s.shots || 0) > 0;
-      if (hasStats && ft){
-        pl.careerSnapshots.push({
-          teamId: ft.id, teamName: ft.name, divisionId: ft.divisionId || null,
-          divisionName: d.divisions.find(x => x.id === ft.divisionId)?.name || '—',
-          stats: JSON.parse(JSON.stringify(s)), date: Date.now(), reason: 'free'
-        });
-      }
-
       if (ft) ft.roster = (ft.roster || []).filter(r => r.playerId !== playerId);
       
       pl.status = 'free_agent';
@@ -103,6 +95,7 @@ export function doFreeAgent(playerId){
   }
 }
 
+// Función de Transferencia Directa (Usada para auto-aprobaciones o traspasos sin cláusulas)
 export function doTransferPlayer(playerId, targetTeamId, forceReset, customPrice = null){
   try {
     const db = getDB();
@@ -207,107 +200,8 @@ export function openTransferModal(playerId){
   const db = getDB();
   const player = db.players.find(p => p.id === playerId);
   if (!player) return toast('Jugador no encontrado', 'error');
-  const currentTeam = getPlayerCurrentTeam(playerId);
-
-  const stats = aggregatePlayerStats().find(s => s.id === playerId);
-  const defaultPrice = calculatePlayerPrice(player, stats, db.config.economy).price;
-
-  const divisionsSorted = [...db.divisions].sort((a, b) => (a.tier || 0) - (b.tier || 0));
-  const groupsHTML = divisionsSorted.map(div => {
-    const teams = db.teams.filter(t => t.divisionId === div.id && t.id !== currentTeam?.id);
-    if (teams.length === 0) return '';
-    const max = getMaxRoster();
-    return `
-      <div class="transfer-group-head">${div.tier || '?'}ª · ${esc(div.name)}</div>
-      ${teams.map(t => {
-        const count = getTeamRosterCount(t.id);
-        const full = count >= max;
-        return `
-          <div class="transfer-team-option ${full ? 'disabled' : ''}"
-               data-target="${t.id}" data-division="${div.id}" data-full="${full ? '1' : '0'}" data-money="${t.money || 0}">
-            <div class="info">
-              ${t.logo ? `<img src="${t.logo}" alt="">` : ''}
-              <span class="name">${esc(t.name)}</span>
-            </div>
-            <span class="slots">${count}/${max}${full ? ' · LLENO' : ''} | $${(t.money||0).toLocaleString()}</span>
-          </div>`;
-      }).join('')}
-    `;
-  }).join('');
-
-  openModal({
-    id: 'transfer-player-' + playerId,
-    title: `TRANSFERIR · ${esc(player.name)}`,
-    wide: true,
-    body: `
-      <div style="margin-bottom:14px;color:var(--muted);font-size:12px;display:flex;justify-content:space-between">
-        <span>Equipo actual: <strong style="color:var(--silver-light)">${esc(currentTeam?.name || 'Agente Libre')}</strong></span>
-        <span>Precio sugerido: <strong style="color:var(--gold)">$${defaultPrice.toLocaleString()}</strong></span>
-      </div>
-      
-      <div class="row" style="margin-bottom:14px">
-        <div class="field" style="margin:0">
-          <label>Monto del fichaje ($)</label>
-          <input class="input" type="number" id="transfer-custom-price" value="${defaultPrice}">
-        </div>
-        <div class="field" style="margin:0">
-          <label>Resetear stats al cambiar de división</label>
-          <label style="display:flex;align-items:center;gap:8px;height:38px">
-            <input type="checkbox" id="transfer-reset-stats"> Sí, resetear
-          </label>
-        </div>
-      </div>
-
-      <div class="field">
-        <label>Destino</label>
-        <div id="transfer-list" style="max-height:280px;overflow-y:auto;border:1px solid var(--border-soft);border-radius:8px;padding:6px;background:var(--bg-graphite)">
-          ${groupsHTML || '<div style="padding:20px;text-align:center;color:var(--muted)">No hay otros equipos disponibles</div>'}
-        </div>
-      </div>
-      <input type="hidden" id="transfer-target-team" value="">
-    `,
-    footer: `
-      <button class="btn btn-ghost" data-close>CANCELAR</button>
-      <button class="btn btn-primary" id="do-transfer" disabled>CONFIRMAR FICHAJE</button>
-    `,
-    onMount: root => {
-      const list = root.querySelector('#transfer-list');
-      const tt = root.querySelector('#transfer-target-team');
-      const priceInp = root.querySelector('#transfer-custom-price');
-      const btn = root.querySelector('#do-transfer');
-
-      list.querySelectorAll('[data-target]').forEach(opt => {
-        opt.addEventListener('click', () => {
-          if (opt.dataset.full === '1') return;
-          list.querySelectorAll('[data-target]').forEach(o => o.classList.remove('selected'));
-          opt.classList.add('selected');
-          tt.value = opt.dataset.target;
-          btn.disabled = false;
-        });
-      });
-
-      priceInp.addEventListener('input', () => {
-        const val = +priceInp.value;
-        if (tt.value) {
-          const selectedOpt = list.querySelector(`[data-target="${tt.value}"]`);
-          if (selectedOpt) {
-            const teamMoney = +selectedOpt.dataset.money;
-            if (!db.config.economy.allowDebt && teamMoney < val) {
-              btn.textContent = 'FONDOS INSUFICIENTES';
-              btn.disabled = true;
-            } else {
-              btn.textContent = 'CONFIRMAR FICHAJE';
-              btn.disabled = false;
-            }
-          }
-        }
-      });
-
-      btn.addEventListener('click', () => {
-        doTransferPlayer(playerId, tt.value, root.querySelector('#transfer-reset-stats').checked, +priceInp.value);
-      });
-    }
-  });
+  
+  openSigningWizard(playerId, false);
 }
 
 export function openRowActions(playerId){
@@ -324,22 +218,22 @@ export function openRowActions(playerId){
         Equipo actual: <strong style="color:var(--silver-light)">${esc(currentTeam?.name || 'Agente Libre')}</strong>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button type="button" class="btn" data-act="loan">📤 PRÉSTAMO</button> <!-- AÑADIDO -->
-        <button type="button" class="btn" data-act="transfer">🔄 Transferir a otro club</button>
+        <button type="button" class="btn" data-act="loan">📤 PRÉSTAMO</button> 
+        <button type="button" class="btn" data-act="transfer">🔄 FICHAJE / NEGOCIAR</button>
         <button type="button" class="btn" data-act="free">🆓 Convertir en agente libre</button>
         <button type="button" class="btn btn-danger" data-act="delete">🗑 Eliminar del programa</button>
       </div>
     `,
     footer: `<button class="btn btn-ghost" data-close>CANCELAR</button>`,
     onMount: root => {
-      root.querySelector('[data-act="loan"]').addEventListener('click', async () => { // AÑADIDO
+      root.querySelector('[data-act="loan"]').addEventListener('click', async () => {
         closeTopModal();
-        const { openLoanModal } = await import('../views/loanModal.js');
-        setTimeout(() => openLoanModal(playerId), 100);
+        const { openLoanWizard } = await import('../views/loanWizard.js');
+        setTimeout(() => openLoanWizard(playerId), 100);
       });
       root.querySelector('[data-act="transfer"]').addEventListener('click', () => {
         closeTopModal();
-        setTimeout(() => openTransferModal(playerId), 100);
+        setTimeout(() => openSigningWizard(playerId, false), 100);
       });
       root.querySelector('[data-act="free"]').addEventListener('click', () => {
         if (!confirm(`¿Convertir a ${player.name} en agente libre?`)) return;
