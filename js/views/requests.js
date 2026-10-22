@@ -1,4 +1,4 @@
-import { getDB, mutate } from '../services/storage.js';
+import { getDB } from '../services/storage.js';
 import { getSupabase } from '../services/supabase.js';
 import { toast } from '../services/ui.js';
 import { doTransferPlayer } from '../services/transfers.js';
@@ -12,13 +12,13 @@ export function requestsView() {
 
   return `
     <div class="page-head">
-      <h1 class="page-title">SOLICITUDES DE COACHES</h1>
+      <h1 class="page-title">SOLICITUDES Y NEGOCIACIONES</h1>
       <button class="btn" id="btnRefreshRequests">↻ ACTUALIZAR</button>
     </div>
 
     <div class="card">
       <div class="card-header">
-        <div class="card-title"><span class="dot">◆</span>PETICIONES PENDIENTES</div>
+        <div class="card-title"><span class="dot">◆</span>BANDEJA DE ENTRADA</div>
         <span class="card-sub" id="reqCount">Cargando...</span>
       </div>
       <div id="requestsList">
@@ -44,39 +44,48 @@ async function loadRequests() {
 
     if (error) throw error;
     
-    // AUTO-EJECUCIÓN DE FICHAJES
+    // AUTO-EJECUCIÓN DE FICHAJES ACEPTADOS
     const acceptedTransfers = data.filter(r => r.type === 'transfer_offer' && r.status === 'accepted_by_target');
     
     for (const req of acceptedTransfers) {
       const payload = req.payload;
       try {
-        doTransferPlayer(payload.playerId, req.from_team_id, false, payload.price);
+        // Ejecutamos el traspaso con la lógica del Gestor
+        doTransferPlayer(payload.playerId, req.from_team_id, false, payload.uniquePrice || payload.price);
         
+        // Creamos el contrato con las cláusulas pactadas
+        createContract({
+          playerId: payload.playerId,
+          type: 'permanent',
+          currentTeamId: req.from_team_id,
+          ownerTeamId: req.to_team_id,
+          durationSeasons: payload.durationSeasons || 1,
+          durationMatchdays: payload.durationMatchdays || 0,
+          uniquePrice: payload.uniquePrice || 0,
+          performanceEnabled: payload.performanceEnabled || false,
+          performanceTargets: payload.performanceTargets || {},
+          renewalOptionEnabled: payload.renewalOptionEnabled || false,
+          renewalPrice: payload.renewalPrice || 0,
+          sellOnClauses: payload.sellOnClauses || [],
+          autoReturnOnElimination: true
+        });
+        
+        // Marcamos como aprobada en la BD
         await sb.from('coach_requests').update({ 
           status: 'approved_by_admin',
           admin_response_at: new Date().toISOString(),
           admin_response_note: 'Auto-aprobado por fichaje directo'
         }).eq('id', req.id);
-
-        if (req.to_coach_id) {
-          await sb.from('coach_notifications').insert({
-            coach_id: req.to_coach_id,
-            type: 'transfer_completed',
-            title: '✅ Fichaje Aceptado',
-            body: `Tu oferta por ${payload.playerName} por $${(payload.price || 0).toLocaleString('en-US')} ha sido aceptada.`,
-            link_type: 'none',
-            priority: 'normal'
-          });
-        }
         
         toast(`💰 Fichaje automático: ${payload.playerName} transferido`, 'success');
       } catch (err) {
         console.error('Error auto-fichaje:', err);
-        toast('Error al ejecutar fichaje: ' + err.message, 'error');
+        toast('Error al ejecutar fichaje automático: ' + err.message, 'error');
       }
     }
 
     _requests = data.filter(r => {
+      // Si ya se auto-ejecutó, lo ocultamos de la lista
       if (r.type === 'transfer_offer' && r.status === 'accepted_by_target') return false; 
       return true;
     });
@@ -109,45 +118,42 @@ function renderRequestCard(req) {
   const toTeam = db.teams.find(t => t.id === req.to_team_id)?.name || 'Agente Libre';
   const coach = db.coaches.find(c => c.id === req.from_coach_id)?.name || 'Coach';
   
-  let typeLabel = '';
-  let description = '';
+  let typeLabel = req.type === 'transfer_offer' ? '💰 FICHAJE' : req.type === 'loan_request' ? '📤 PRÉSTAMO' : 'CAMBIO';
   
-  if (req.type === 'transfer_offer') {
-    typeLabel = '💰 OFERTA DE FICHAJE';
-    description = `El coach <b>${coach}</b> (${fromTeam}) quiere fichar a <b>${payload.playerName || 'Jugador'}</b> por <b>$${(payload.price || 0).toLocaleString('en-US')}</b>.`;
-  } else if (req.type === 'loan_request') {
-    typeLabel = '📤 SOLICITUD DE PRÉSTAMO';
-    description = `El coach <b>${coach}</b> (${fromTeam}) quiere a <b>${payload.playerName || 'Jugador'}</b> en préstamo por <b>${payload.durationMatchdays} jornadas</b>.`;
-  } else if (req.type === 'staff_transfer') {
-    typeLabel = '🧑‍💼 CONTRATO DE STAFF';
-    description = `El coach <b>${coach}</b> (${fromTeam}) quiere contratar a <b>${payload.coachName || 'Staff'}</b>.`;
-  } else {
-    typeLabel = '📄 CAMBIO DE CONTRATO';
-    description = `El coach <b>${coach}</b> solicita un cambio de contrato para <b>${payload.playerName || 'Jugador'}</b>.`;
-  }
+  let clausesHTML = '';
+  if (payload.durationSeasons) clausesHTML += `<div><b>Duración:</b> ${payload.durationSeasons} Temporadas ${payload.durationMatchdays ? `+ ${payload.durationMatchdays} Jornadas` : ''}</div>`;
+  if (payload.uniquePrice > 0) clausesHTML += `<div><b>Precio:</b> $${payload.uniquePrice.toLocaleString('en-US')}</div>`;
+  if (payload.sellOnClause) clausesHTML += `<div><b>Futura Venta:</b> ${payload.sellOnPercentage}% x ${payload.sellOnSales} ventas</div>`;
+  if (payload.performanceEnabled) clausesHTML += `<div><b>Metas:</b> ${payload.performanceTargets.goals?.enabled ? 'Goles ' + payload.performanceTargets.goals.min : ''} ${payload.performanceTargets.assists?.enabled ? 'Asist ' + payload.performanceTargets.assists.min : ''}</div>`;
 
-  const statusLabel = req.status === 'pending' ? 'PENDIENTE (ESPERANDO AL COACH)' : 'ACEPTADO POR EL COACH (REQUIERE TU APROBACIÓN)';
+  const statusLabel = req.status === 'pending' ? 'ESPERANDO AL COACH' : 'ACEPTADO POR EL COACH (APROBACIÓN)';
   const badgeClass = req.status === 'pending' ? 'badge-live' : 'badge-win';
-
-  const canAdminAct = req.status === 'accepted_by_target';
 
   return `
     <div class="card" style="margin-bottom:10px; border-left:4px solid ${req.status === 'accepted_by_target' ? 'var(--success)' : 'var(--accent)'}">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px">
         <div>
           <div style="font-size:14px; font-weight:600; color:var(--silver-light); margin-bottom:4px;">
-            ${typeLabel} · ${fromTeam} ${req.to_team_id ? '→ ' + toTeam : ''}
+            ${typeLabel} · ${fromTeam} → ${toTeam}
           </div>
-          <div style="font-size:13px; color:var(--silver); margin:8px 0; background:var(--bg-graphite); padding:10px; border-radius:6px;">
-            ${description}
+          <div style="font-size:13px; color:var(--silver); margin:8px 0; background:var(--bg-graphite); padding:10px; border-radius:6px; display:flex; flex-direction:column; gap:4px;">
+            <div><b>Jugador:</b> ${payload.playerName || 'Jugador'}</div>
+            ${clausesHTML}
           </div>
+          
+          ${payload.customMessage ? `
+            <div style="font-size:12px; color:var(--accent); font-style:italic; padding:8px; border-left:2px solid var(--accent); background:rgba(111,168,255,0.05); margin-bottom:8px;">
+              "${payload.customMessage}"
+            </div>
+          ` : ''}
+          
           <div style="font-size:11px; color:var(--muted);">
-            Solicitado: ${new Date(req.created_at).toLocaleString()}
+            Solicitado por ${coach} el ${new Date(req.created_at).toLocaleString()}
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <span class="badge ${badgeClass}">${statusLabel}</span>
-          ${canAdminAct ? `
+          ${req.status === 'accepted_by_target' ? `
             <button class="btn btn-sm btn-primary" data-approve-req="${req.id}">✅ APROBAR</button>
             <button class="btn btn-sm btn-danger" data-reject-req="${req.id}">❌ RECHAZAR</button>
           ` : ''}
@@ -176,67 +182,50 @@ async function approveRequest(reqId) {
   const req = _requests.find(r => r.id === reqId);
   if (!req) return;
   
-  if (req.type === 'loan_request') {
-    const payload = req.payload;
-    try {
+  const payload = req.payload;
+  try {
+    if (req.type === 'loan_request' || req.type === 'transfer_offer') {
       createContract({
         playerId: payload.playerId,
-        type: 'loan',
+        type: req.type === 'loan_request' ? 'loan' : 'permanent',
         currentTeamId: req.to_team_id,
         ownerTeamId: req.from_team_id,
-        durationMatchdays: payload.durationMatchdays,
+        durationSeasons: payload.durationSeasons || 1,
+        durationMatchdays: payload.durationMatchdays || 0,
         uniquePrice: payload.uniquePrice || 0,
         perMatchdayPrice: payload.perMatchdayPrice || 0,
-        chargeEvenIfNotPlayed: payload.chargeEvenIfNotPlayed ?? true,
         performanceEnabled: payload.performanceEnabled || false,
         performanceTargets: payload.performanceTargets || {},
-        buyOptionEnabled: false,
-        buyPrice: 0,
-        mandatoryBuy: false,
+        renewalOptionEnabled: payload.renewalOptionEnabled || false,
+        renewalPrice: payload.renewalPrice || 0,
+        sellOnClauses: payload.sellOnClauses || [],
         autoReturnOnElimination: true
       });
-      await updateRequestStatus(reqId, 'approved_by_admin', 'Préstamo ejecutado por el admin', req.from_coach_id, '✅ Préstamo Aprobado', `Tu solicitud de préstamo por ${payload.playerName} ha sido aprobada por el Admin.`);
-    } catch (e) {
-      toast(e.message, 'error');
     }
-  } else {
-    await updateRequestStatus(reqId, 'approved_by_admin', 'Aprobado por el administrador', req.from_coach_id, '✅ Solicitud Aprobada', 'Tu solicitud ha sido aprobada por el administrador.');
+    
+    const sb = getSupabase();
+    await sb.from('coach_requests').update({ 
+      status: 'approved_by_admin',
+      admin_response_at: new Date().toISOString()
+    }).eq('id', reqId);
+    
+    toast('✅ Solicitud aprobada y ejecutada', 'success');
+    loadRequests();
+  } catch (e) {
+    toast('Error al ejecutar: ' + e.message, 'error');
   }
 }
 
 async function rejectRequest(reqId) {
-  const req = _requests.find(r => r.id === reqId);
-  if (!req) return;
-  await updateRequestStatus(reqId, 'rejected_by_admin', 'Rechazado por el administrador', req.from_coach_id, '❌ Solicitud Rechazada', 'Tu solicitud ha sido rechazada por el administrador.');
-}
-
-async function updateRequestStatus(reqId, status, note, coachIdToNotify, notifTitle, notifBody) {
   try {
     const sb = getSupabase();
-    const { error } = await sb.from('coach_requests').update({ 
-      status: status,
-      admin_response_at: new Date().toISOString(),
-      admin_response_note: note
+    await sb.from('coach_requests').update({ 
+      status: 'rejected_by_admin',
+      admin_response_at: new Date().toISOString()
     }).eq('id', reqId);
-    
-    if (error) throw error;
-
-    // Notificar al coach
-    if (coachIdToNotify) {
-      await sb.from('coach_notifications').insert({
-        coach_id: coachIdToNotify,
-        type: 'request_response',
-        title: notifTitle,
-        body: notifBody,
-        link_type: 'none',
-        priority: 'normal'
-      });
-    }
-    
-    toast('Solicitud procesada', 'success');
+    toast('Solicitud rechazada', 'success');
     loadRequests();
   } catch (e) {
-    console.error(e);
-    toast('Error al actualizar estado: ' + e.message, 'error');
+    toast('Error: ' + e.message, 'error');
   }
 }
