@@ -8,7 +8,6 @@ export function contractsView(){
   const db = getDB();
   const alerts = getContractAlerts();
   
-  // Contratos de la nueva tabla (Fichajes y Préstamos con cláusulas)
   const activeContracts = (db.contracts || []).filter(c => c.status === 'active' || c.status === 'awaiting_return');
   const pastContracts = (db.contracts || []).filter(c => c.status !== 'active' && c.status !== 'awaiting_return').sort((a,b) => (b.terminatedAt || 0) - (a.terminatedAt || 0));
 
@@ -80,10 +79,9 @@ function renderTab(tab, alerts, active, history, db){
                 const team = db.teams.find(t => t.id === c.teamId);
                 const origin = db.teams.find(t => t.id === c.ownerTeamId);
                 
-                let clausesText = [];
-                if (c.clauses?.sellOnClauses?.length > 0) clausesText.push(`Futura Venta (${c.clauses.sellOnClauses[0].percentage}%)`);
-                if (c.clauses?.performance?.enabled) clausesText.push('Rendimiento');
-                if (c.clauses?.renewalOption?.enabled) clausesText.push(`Renovación ($${c.clauses.renewalOption.price})`);
+                let vigenciaStr = '';
+                if (c.durationSeasons > 0) vigenciaStr += `${c.durationSeasons} Temp. `;
+                if (c.durationMatchdays > 0) vigenciaStr += `${vigenciaStr ? '+ ' : ''}${c.durationMatchdays}J`;
 
                 return `
                   <tr>
@@ -95,7 +93,7 @@ function renderTab(tab, alerts, active, history, db){
                     </td>
                     <td><span class="badge ${c.type === 'loan' ? 'badge-gold' : ''}">${c.type === 'loan' ? 'PRÉSTAMO' : 'FICHAJE'}</span></td>
                     <td>${team?.name || '—'} ${c.type === 'loan' && origin ? `(De ${origin.name})` : ''}</td>
-                    <td>${c.durationSeasons} Temp. ${c.durationMatchdays > 0 ? `+ ${c.durationMatchdays}J` : ''}</td>
+                    <td>${vigenciaStr.trim()}</td>
                     <td><span class="badge ${c.status === 'active' ? 'badge-win' : 'badge-live'}">${c.status.toUpperCase()}</span></td>
                     <td class="num" style="display:flex; gap:6px; justify-content:flex-end;">
                       ${c.status === 'awaiting_return' ? `<button class="btn btn-sm btn-primary" data-resolve-return="${c.id}">RESOLVER</button>` : ''}
@@ -168,7 +166,6 @@ export function bindContractsEvents(){
 }
 
 function bindContractActionButtons() {
-  // Botón para resolver retornos pendientes
   document.querySelectorAll('[data-resolve-return]').forEach(btn => {
     btn.addEventListener('click', () => {
       try {
@@ -181,7 +178,6 @@ function bindContractActionButtons() {
     });
   });
 
-  // Botón para terminar un contrato a la fuerza
   document.querySelectorAll('[data-terminate]').forEach(btn => {
     btn.addEventListener('click', () => {
       confirmDialog('¿Estás seguro de terminar este contrato forzosamente? El jugador pasará a Agentes Libres.', () => {
@@ -193,7 +189,7 @@ function bindContractActionButtons() {
             const t = d.teams.find(x => x.id === c.teamId);
             
             if (t) t.roster = t.roster.filter(r => r.playerId !== c.playerId);
-            if (p) { p.status = 'free_agent'; p.contractId = null; p.ownerTeamId = null; }
+            if (p) { p.status = 'free_agent'; p.contractId = null; p.ownerTeamId = null; p.divisionId = null; }
             
             c.status = 'terminated';
             c.terminationReason = 'admin_action';
