@@ -205,9 +205,19 @@ async function boot(){
       await new Promise(r => setTimeout(r, 100));
       await performInitialDownload({ reason: 'boot' });
       
-      // Procesar ofertas aceptadas que se hayan quedado pendientes al arrancar
+      // Procesar ofertas al arrancar
       await processAutoRequests().catch(e => console.error("Error en auto-process inicial:", e));
     }
+
+    // ============================================================
+    // RADAR AUTOMÁTICO: Cada 10 segundos busca ofertas aceptadas
+    // ============================================================
+    setInterval(() => {
+      if (isAuthenticated()) {
+        processAutoRequests().catch(e => console.error("Error en Radar Automático:", e));
+      }
+    }, 10000);
+    // ============================================================
 
     console.log('[APP] Boot completo');
 
