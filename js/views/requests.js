@@ -8,7 +8,8 @@ let _requests = [];
 let _loading = false;
 
 export function requestsView() {
-  loadRequests();
+  // Usamos un pequeño delay para asegurar que el DOM esté listo
+  setTimeout(() => loadRequests(), 100);
 
   return `
     <div class="page-head">
@@ -28,7 +29,7 @@ export function requestsView() {
   `;
 }
 
-// NUEVA FUNCIÓN EXPORTADA PARA AUTO-PROCESAMIENTO
+// AUTO-PROCESAMIENTO CORREGIDO
 export async function processAutoRequests() {
   const sb = getSupabase();
   try {
@@ -42,9 +43,8 @@ export async function processAutoRequests() {
       const payload = req.payload;
       try {
         if (req.type === 'transfer_offer') {
-          // 1. Mover al jugador (sin cobrar, porque el SQL ya lo hizo o lo haremos aquí)
-          // Usamos doTransferPlayer con 0 de precio para que solo actualice el roster y status
-          doTransferPlayer(payload.playerId, req.from_team_id, false, 0);
+          // 1. Mover al jugador y cobrar el precio real
+          doTransferPlayer(payload.playerId, req.from_team_id, false, payload.uniquePrice || 0);
           
           // 2. Crear el contrato real
           createContract({
@@ -107,19 +107,24 @@ async function loadRequests() {
     // 1. Ejecutamos la auto-aprobación de lo que ya está aceptado
     await processAutoRequests();
 
-    // 2. Filtramos las que siguen pendientes para mostrarlas
-    _requests = data.filter(r => r.status === 'pending');
+    // 2. Recargamos los datos para ver los cambios
+    const { data: freshData, error: freshError } = await sb.from('coach_requests')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+
+    if (freshError) throw freshError;
+    _requests = freshData || [];
     
     if (countEl) countEl.textContent = `${_requests.length} pendientes`;
     
-    if (_requests.length === 0) {
-      if (listEl) listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">No hay solicitudes pendientes.</div>';
-      return;
-    }
-
     if (listEl) {
-      listEl.innerHTML = _requests.map(req => renderRequestCard(req)).join('');
-      bindRequestButtons();
+      if (_requests.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">No hay solicitudes pendientes.</div>';
+      } else {
+        listEl.innerHTML = _requests.map(req => renderRequestCard(req)).join('');
+        bindRequestButtons();
+      }
     }
 
   } catch (err) {
