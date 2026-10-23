@@ -6,6 +6,7 @@ import { doTransferPlayer } from '../services/transfers.js';
 
 let _requests = [];
 let _loading = false;
+const _processingAutoRequests = new Set(); // <-- LOCK EN MEMORIA
 
 export function requestsView() {
   setTimeout(() => loadRequests(), 100);
@@ -40,11 +41,15 @@ export async function processAutoRequests() {
     if (error || !data || data.length === 0) return;
 
     for (const req of data) {
+      // SI YA ESTÁ EN MEMORIA, LO SALTAMOS
+      if (_processingAutoRequests.has(req.id)) continue;
+      
       const payload = req.payload;
       try {
-        // 2. BLOQUEO ATÓMICO: Intentamos cambiar el estado de la oferta a 'processing'.
-        // Si devuelve datos, es porque nosotros fuimos los primeros en tomarla.
-        // Si devuelve array vacío, es porque otro proceso (Realtime o Radar) ya la tomó.
+        // LO MARCAMOS EN MEMORIA PARA BLOQUEAR AL REALTIME
+        _processingAutoRequests.add(req.id);
+
+        // 2. BLOQUEO EN BD (Doble seguridad)
         const { data: lockData, error: lockErr } = await sb.from('coach_requests')
           .update({ status: 'processing' })
           .eq('id', req.id)
@@ -52,11 +57,11 @@ export async function processAutoRequests() {
           .select();
 
         if (lockErr || !lockData || lockData.length === 0) {
-          // Otro proceso ya la tomó. Saltamos esta oferta.
+          _processingAutoRequests.delete(req.id);
           continue;
         }
 
-        // 3. Ejecutamos la transacción (sabiendo que somos los únicos dueños de esta oferta)
+        // 3. Ejecutamos la transacción
         if (req.type === 'transfer_offer') {
           doTransferPlayer(payload.playerId, req.from_team_id, false, payload.uniquePrice || 0);
           createContract({
@@ -90,8 +95,9 @@ export async function processAutoRequests() {
       } catch (err) {
         console.error('Error auto-fichaje:', err);
         toast('Error auto-fichaje: ' + err.message, 'error');
-        // Si falla la transacción, devolvemos la oferta a 'accepted_by_target' para que el Radar lo reintente
         await sb.from('coach_requests').update({ status: 'accepted_by_target' }).eq('id', req.id);
+      } finally {
+        _processingAutoRequests.delete(req.id); // <-- LIMPIAMOS EL LOCK
       }
     }
   } catch (err) {
