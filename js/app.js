@@ -22,7 +22,7 @@ import { marketView, bindMarketEvents } from './views/market.js';
 import { performanceView, bindPerformanceEvents } from './views/performance.js';
 import { contractsView, bindContractsEvents } from './views/contracts.js';
 import { coachesView, bindCoachesEvents } from './views/coaches.js';
-import { requestsView, bindRequestsEvents } from './views/requests.js';
+import { requestsView, bindRequestsEvents, processAutoRequests } from './views/requests.js'; // <-- IMPORTACIÓN DE processAutoRequests
 import { warningsView, bindWarningsEvents } from './views/warnings.js';
 import { destroyAllCarousels } from './views/widgetCarousel.js';
 import { accountsView, bindAccountsEvents } from './views/accounts.js';
@@ -307,6 +307,10 @@ window.addEventListener('zenith:sync-pulled', () => {
   } catch(themeErr) {
     console.warn('[APP] No se pudo aplicar el tema tras pull remoto:', themeErr);
   }
+  
+  // AUTO-PROCESAMIENTO DE SOLICITUDES ACEPTADAS
+  processAutoRequests();
+  
   refreshView();
 });
 
