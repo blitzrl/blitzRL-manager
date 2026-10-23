@@ -28,9 +28,11 @@ export function requestsView() {
   `;
 }
 
+// AUTO-PROCESAMIENTO BLINDADO CONTRA DUPLICADOS
 export async function processAutoRequests() {
   const sb = getSupabase();
   try {
+    // 1. Buscamos ofertas que estén aceptadas.
     const { data, error } = await sb.from('coach_requests')
       .select('*')
       .eq('status', 'accepted_by_target');
@@ -40,6 +42,21 @@ export async function processAutoRequests() {
     for (const req of data) {
       const payload = req.payload;
       try {
+        // 2. BLOQUEO ATÓMICO: Intentamos cambiar el estado de la oferta a 'processing'.
+        // Si devuelve datos, es porque nosotros fuimos los primeros en tomarla.
+        // Si devuelve array vacío, es porque otro proceso (Realtime o Radar) ya la tomó.
+        const { data: lockData, error: lockErr } = await sb.from('coach_requests')
+          .update({ status: 'processing' })
+          .eq('id', req.id)
+          .eq('status', 'accepted_by_target')
+          .select();
+
+        if (lockErr || !lockData || lockData.length === 0) {
+          // Otro proceso ya la tomó. Saltamos esta oferta.
+          continue;
+        }
+
+        // 3. Ejecutamos la transacción (sabiendo que somos los únicos dueños de esta oferta)
         if (req.type === 'transfer_offer') {
           doTransferPlayer(payload.playerId, req.from_team_id, false, payload.uniquePrice || 0);
           createContract({
@@ -61,6 +78,7 @@ export async function processAutoRequests() {
           });
         }
         
+        // 4. Marcamos como aprobado definitivamente.
         await sb.from('coach_requests').update({ 
           status: 'approved_by_admin', 
           admin_response_at: new Date().toISOString(), 
@@ -72,6 +90,8 @@ export async function processAutoRequests() {
       } catch (err) {
         console.error('Error auto-fichaje:', err);
         toast('Error auto-fichaje: ' + err.message, 'error');
+        // Si falla la transacción, devolvemos la oferta a 'accepted_by_target' para que el Radar lo reintente
+        await sb.from('coach_requests').update({ status: 'accepted_by_target' }).eq('id', req.id);
       }
     }
   } catch (err) {
@@ -90,7 +110,7 @@ async function loadRequests() {
     const sb = getSupabase();
     const { data, error } = await sb.from('coach_requests')
       .select('*')
-      .in('status', ['pending', 'accepted_by_target'])
+      .in('status', ['pending', 'accepted_by_target', 'processing'])
       .order('created_at', { ascending: false });
 
     if (error) throw error;
