@@ -8,7 +8,6 @@ let _requests = [];
 let _loading = false;
 
 export function requestsView() {
-  // Usamos un pequeño delay para asegurar que el DOM esté listo
   setTimeout(() => loadRequests(), 100);
 
   return `
@@ -29,7 +28,6 @@ export function requestsView() {
   `;
 }
 
-// AUTO-PROCESAMIENTO CORREGIDO
 export async function processAutoRequests() {
   const sb = getSupabase();
   try {
@@ -43,10 +41,7 @@ export async function processAutoRequests() {
       const payload = req.payload;
       try {
         if (req.type === 'transfer_offer') {
-          // 1. Mover al jugador y cobrar el precio real
           doTransferPlayer(payload.playerId, req.from_team_id, false, payload.uniquePrice || 0);
-          
-          // 2. Crear el contrato real
           createContract({
             playerId: payload.playerId, type: 'permanent', currentTeamId: req.from_team_id, ownerTeamId: req.to_team_id,
             durationSeasons: payload.durationSeasons || 1, durationMatchdays: payload.durationMatchdays || 0,
@@ -56,10 +51,7 @@ export async function processAutoRequests() {
           });
         } 
         else if (req.type === 'loan_request') {
-          // 1. Mover al jugador
           doTransferPlayer(payload.playerId, req.from_team_id, false, 0);
-          
-          // 2. Crear el contrato de préstamo
           createContract({
             playerId: payload.playerId, type: 'loan', currentTeamId: req.from_team_id, ownerTeamId: req.to_team_id,
             durationSeasons: payload.durationSeasons || 0, durationMatchdays: payload.durationMatchdays || 0,
@@ -69,7 +61,6 @@ export async function processAutoRequests() {
           });
         }
         
-        // Marcar como aprobado en la BD
         await sb.from('coach_requests').update({ 
           status: 'approved_by_admin', 
           admin_response_at: new Date().toISOString(), 
@@ -104,10 +95,8 @@ async function loadRequests() {
 
     if (error) throw error;
     
-    // 1. Ejecutamos la auto-aprobación de lo que ya está aceptado
     await processAutoRequests();
 
-    // 2. Recargamos los datos para ver los cambios
     const { data: freshData, error: freshError } = await sb.from('coach_requests')
       .select('*')
       .eq('status', 'pending')
