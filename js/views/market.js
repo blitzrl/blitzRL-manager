@@ -62,8 +62,14 @@ function renderPlayersMarket(db){
                   const player = db.players.find(p => p.id === m.playerId) || {};
                   const fromTeam = db.teams.find(t => t.id === m.fromTeamId);
                   const toTeam = db.teams.find(t => t.id === m.toTeamId);
-                  const typeLabel = m.type === 'transfer' ? 'FICHAJE' : m.type === 'free' ? 'AGENTE LIBRE' : m.type === 'loan' ? 'PRÉSTAMO' : 'PENDIENTE';
                   
+                  let typeLabel = 'FICHAJE';
+                  let chipClass = m.type;
+                  if (m.type === 'free') typeLabel = 'AGENTE LIBRE';
+                  if (m.type === 'loan') typeLabel = 'PRÉSTAMO';
+                  if (m.type === 'pending') typeLabel = 'PENDIENTE';
+                  if (m.type === 'portal_transfer') { typeLabel = 'FICHAJE (PORTAL)'; chipClass = 'transfer'; } // <-- NUEVO
+
                   const priceVal = m.price;
                   const priceStr = priceVal !== undefined ? `$${priceVal.toLocaleString()}` : '—';
 
@@ -85,7 +91,7 @@ function renderPlayersMarket(db){
                           <span class="market-team-pill">${toTeam?.logo ? `<img src="${toTeam.logo}" alt="">` : ''}${esc(m.toTeamName || 'Agente libre')}</span>
                         </div>
                       </td>
-                      <td class="num"><span class="market-type-chip ${m.type}">${typeLabel}</span></td>
+                      <td class="num"><span class="market-type-chip ${chipClass}">${typeLabel}</span></td>
                       <td class="num" style="color:var(--gold);font-weight:600">${priceStr}</td>
                       <td class="num"><button class="btn btn-sm btn-primary" data-mkt-news="${m.id}">📰 NOTICIA</button></td>
                     </tr>`;
@@ -185,7 +191,6 @@ function openStaffTransferModal(coachId) {
           const c = d.coaches.find(x => x.id === coachId);
           if (!c) return;
           
-          // Si tenía equipo, lo limpiamos
           if (c.teamId) {
             const oldTeam = d.teams.find(t => t.id === c.teamId);
             if (oldTeam) {
