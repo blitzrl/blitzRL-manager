@@ -386,7 +386,8 @@ export function subscribeRealtime(onChange) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'coaches' }, () => onChange('coaches'))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => onChange('matches'))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'news' }, () => onChange('news'))
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'config' }, () => onChange('config')) // <--- LÍNEA AÑADIDA
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'config' }, () => onChange('config'))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'coach_requests' }, () => onChange('coach_requests')) // <--- AÑADIDO AQUÍ
     .subscribe((status) => {
       console.log('[REALTIME]', status);
       window.dispatchEvent(new CustomEvent('zenith:realtime-status', { detail: status }));
