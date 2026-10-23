@@ -68,7 +68,7 @@ function renderPlayersMarket(db){
                   if (m.type === 'free') typeLabel = 'AGENTE LIBRE';
                   if (m.type === 'loan') typeLabel = 'PRÉSTAMO';
                   if (m.type === 'pending') typeLabel = 'PENDIENTE';
-                  if (m.type === 'portal_transfer') { typeLabel = 'FICHAJE (PORTAL)'; chipClass = 'transfer'; } // <-- NUEVO
+                  if (m.type === 'portal_transfer') { typeLabel = 'FICHAJE'; chipClass = 'transfer'; } // <-- NUEVO
 
                   const priceVal = m.price;
                   const priceStr = priceVal !== undefined ? `$${priceVal.toLocaleString()}` : '—';
