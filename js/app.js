@@ -22,7 +22,7 @@ import { marketView, bindMarketEvents } from './views/market.js';
 import { performanceView, bindPerformanceEvents } from './views/performance.js';
 import { contractsView, bindContractsEvents } from './views/contracts.js';
 import { coachesView, bindCoachesEvents } from './views/coaches.js';
-import { requestsView, bindRequestsEvents, processAutoRequests } from './views/requests.js'; // <-- IMPORTACIÓN DE processAutoRequests
+import { requestsView, bindRequestsEvents, processAutoRequests } from './views/requests.js';
 import { warningsView, bindWarningsEvents } from './views/warnings.js';
 import { destroyAllCarousels } from './views/widgetCarousel.js';
 import { accountsView, bindAccountsEvents } from './views/accounts.js';
@@ -204,6 +204,9 @@ async function boot(){
     if (isAuthenticated()) {
       await new Promise(r => setTimeout(r, 100));
       await performInitialDownload({ reason: 'boot' });
+      
+      // NUEVO: Procesar ofertas aceptadas que se hayan quedado pendientes
+      await processAutoRequests().catch(e => console.error("Error en auto-process inicial:", e));
     }
 
     console.log('[APP] Boot completo');
@@ -308,8 +311,8 @@ window.addEventListener('zenith:sync-pulled', () => {
     console.warn('[APP] No se pudo aplicar el tema tras pull remoto:', themeErr);
   }
   
-  // AUTO-PROCESAMIENTO DE SOLICITUDES ACEPTADAS
-  processAutoRequests();
+  // MAGIA: Procesar ofertas aceptadas automáticamente en segundo plano
+  processAutoRequests().catch(e => console.error("Error auto-process:", e));
   
   refreshView();
 });
