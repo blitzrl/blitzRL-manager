@@ -205,7 +205,7 @@ async function boot(){
       await new Promise(r => setTimeout(r, 100));
       await performInitialDownload({ reason: 'boot' });
       
-      // NUEVO: Procesar ofertas aceptadas que se hayan quedado pendientes
+      // Procesar ofertas aceptadas que se hayan quedado pendientes al arrancar
       await processAutoRequests().catch(e => console.error("Error en auto-process inicial:", e));
     }
 
@@ -311,7 +311,6 @@ window.addEventListener('zenith:sync-pulled', () => {
     console.warn('[APP] No se pudo aplicar el tema tras pull remoto:', themeErr);
   }
   
-  // MAGIA: Procesar ofertas aceptadas automáticamente en segundo plano
   processAutoRequests().catch(e => console.error("Error auto-process:", e));
   
   refreshView();
