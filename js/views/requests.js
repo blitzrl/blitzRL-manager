@@ -34,7 +34,6 @@ export async function processAutoRequests() {
 
   const sb = getSupabase();
   try {
-    // 1. FILTRAR SOLO LAS ACEPTADAS POR EL PORTAL
     const { data, error } = await sb.from('coach_requests')
       .select('*')
       .eq('status', 'accepted_by_target');
@@ -48,7 +47,6 @@ export async function processAutoRequests() {
       try {
         _processingIds.add(req.id);
 
-        // 2. BLOQUEAR LA OFERTA (Evita que otro proceso la tome)
         const { data: lockData, error: lockErr } = await sb.from('coach_requests')
           .update({ status: 'processing' })
           .eq('id', req.id)
@@ -57,13 +55,11 @@ export async function processAutoRequests() {
 
         if (lockErr || !lockData || lockData.length === 0) {
           _processingIds.delete(req.id);
-          continue; 
+          continue;
         }
 
-        // 3. CREAR EL CONTRATO (Esto mueve al jugador, cobra el dinero y actualiza el historial)
-        // NO HACEMOS downloadAll() PARA EVITAR LA DUPLICACIÓN
         if (req.type === 'transfer_offer') {
-          createContract({
+          await createContract({
             playerId: payload.playerId, type: 'permanent', currentTeamId: req.from_team_id, ownerTeamId: req.to_team_id,
             durationSeasons: payload.durationSeasons || 1, durationMatchdays: payload.durationMatchdays || 0,
             uniquePrice: payload.uniquePrice || 0, performanceEnabled: payload.performanceEnabled || false,
@@ -72,7 +68,7 @@ export async function processAutoRequests() {
           });
         } 
         else if (req.type === 'loan_request') {
-          createContract({
+          await createContract({
             playerId: payload.playerId, type: 'loan', currentTeamId: req.from_team_id, ownerTeamId: req.to_team_id,
             durationSeasons: payload.durationSeasons || 0, durationMatchdays: payload.durationMatchdays || 0,
             uniquePrice: payload.uniquePrice || 0, perMatchdayPrice: payload.perMatchdayPrice || 0,
@@ -81,7 +77,6 @@ export async function processAutoRequests() {
           });
         }
         
-        // 4. MARCAR LA OFERTA COMO APROBADA DEFINITIVAMENTE
         await sb.from('coach_requests').update({ 
           status: 'approved_by_admin', 
           admin_response_at: new Date().toISOString(), 
@@ -93,7 +88,6 @@ export async function processAutoRequests() {
       } catch (err) {
         console.error('Error auto-fichaje:', err);
         toast('Error auto-fichaje: ' + err.message, 'error');
-        // Si falla, devolvemos a 'accepted_by_target' para que se reintente.
         await sb.from('coach_requests').update({ status: 'accepted_by_target' }).eq('id', req.id);
       } finally {
         _processingIds.delete(req.id);
@@ -228,7 +222,7 @@ async function approveRequest(reqId) {
       });
     } 
     else if (req.type === 'free_agent_sign') {
-      createContract({
+      await createContract({
         playerId: payload.playerId, type: 'permanent', currentTeamId: req.from_team_id, ownerTeamId: req.from_team_id,
         durationSeasons: 1, durationMatchdays: 0, uniquePrice: payload.price || 0,
         performanceEnabled: false, performanceTargets: {}, renewalOptionEnabled: false,
