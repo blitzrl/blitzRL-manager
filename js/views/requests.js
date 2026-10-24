@@ -2,10 +2,11 @@ import { getDB, mutate } from '../services/storage.js';
 import { getSupabase } from '../services/supabase.js';
 import { toast } from '../services/ui.js';
 import { createContract } from '../services/contracts.js';
-import { doTransferPlayer } from '../services/transfers.js';
+// import { doTransferPlayer } from '../services/transfers.js'; // <-- ELIMINADO
 
 let _requests = [];
 let _loading = false;
+const _processingAutoRequests = new Set(); 
 
 export function requestsView() {
   setTimeout(() => loadRequests(), 100);
@@ -33,7 +34,6 @@ export async function processAutoRequests() {
   window.__isProcessingAutoRequests = true;
 
   const sb = getSupabase();
-  const processedPlayerIds = new Set(); // <-- EVITA DUPLICADOS EN EL MISMO LOTE
 
   try {
     const { data, error } = await sb.from('coach_requests')
@@ -43,16 +43,12 @@ export async function processAutoRequests() {
     if (error || !data || data.length === 0) return;
 
     for (const req of data) {
-      const payload = req.payload;
+      if (_processingAutoRequests.has(req.id)) continue;
       
-      // SI YA PROCESAMOS A ESTE JUGADOR EN ESTA RONDA, LO SALTAMOS
-      if (processedPlayerIds.has(payload.playerId)) {
-        console.warn(`Oferta duplicada detectada para ${payload.playerName}. Cancelando duplicado.`);
-        await sb.from('coach_requests').update({ status: 'rejected_duplicate' }).eq('id', req.id);
-        continue; 
-      }
-
+      const payload = req.payload;
       try {
+        _processingAutoRequests.add(req.id);
+
         const { data: lockData, error: lockErr } = await sb.from('coach_requests')
           .update({ status: 'processing' })
           .eq('id', req.id)
@@ -60,20 +56,18 @@ export async function processAutoRequests() {
           .select();
 
         if (lockErr || !lockData || lockData.length === 0) {
-          continue; 
+          _processingAutoRequests.delete(req.id);
+          continue;
         }
 
-        // MARCAMOS AL JUGADOR COMO PROCESADO
-        processedPlayerIds.add(payload.playerId);
-
-        // REFRESCAR DATOS
+        // 1. REFRESCAR DATOS
         const { downloadAll } = await import('../services/supabase.js');
         const remoteDB = await downloadAll();
         const { setRawDB } = await import('../services/storage.js');
         setRawDB({ ...remoteDB, viewSeasonId: getDB().viewSeasonId });
 
+        // 2. EJECUTAR SOLO createContract (Evita la duplicación)
         if (req.type === 'transfer_offer') {
-          doTransferPlayer(payload.playerId, req.from_team_id, false, payload.uniquePrice || 0);
           createContract({
             playerId: payload.playerId, type: 'permanent', currentTeamId: req.from_team_id, ownerTeamId: req.to_team_id,
             durationSeasons: payload.durationSeasons || 1, durationMatchdays: payload.durationMatchdays || 0,
@@ -83,7 +77,6 @@ export async function processAutoRequests() {
           });
         } 
         else if (req.type === 'loan_request') {
-          doTransferPlayer(payload.playerId, req.from_team_id, false, 0);
           createContract({
             playerId: payload.playerId, type: 'loan', currentTeamId: req.from_team_id, ownerTeamId: req.to_team_id,
             durationSeasons: payload.durationSeasons || 0, durationMatchdays: payload.durationMatchdays || 0,
@@ -93,6 +86,7 @@ export async function processAutoRequests() {
           });
         }
         
+        // 3. MARCAR COMO APROBADO
         await sb.from('coach_requests').update({ 
           status: 'approved_by_admin', 
           admin_response_at: new Date().toISOString(), 
@@ -105,6 +99,8 @@ export async function processAutoRequests() {
         console.error('Error auto-fichaje:', err);
         toast('Error auto-fichaje: ' + err.message, 'error');
         await sb.from('coach_requests').update({ status: 'accepted_by_target' }).eq('id', req.id);
+      } finally {
+        _processingAutoRequests.delete(req.id);
       }
     }
   } catch (err) {
@@ -245,7 +241,7 @@ async function approveRequest(reqId) {
       });
     } 
     else if (req.type === 'free_agent_sign') {
-      doTransferPlayer(payload.playerId, req.from_team_id, false, payload.price || 0);
+      // Para agentes libres usamos createContract. No hay dueño previo, así que no hay doble cobro.
       createContract({
         playerId: payload.playerId, type: 'permanent', currentTeamId: req.from_team_id, ownerTeamId: req.from_team_id,
         durationSeasons: 1, durationMatchdays: 0, uniquePrice: payload.price || 0,
