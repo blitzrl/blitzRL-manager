@@ -94,7 +94,7 @@ export function createContract(payload) {
         if (target.roster.length >= (d.config.rosterRules?.max || 4)) {
           throw new Error('El equipo destino no tiene espacio en el roster');
         }
-        // BLINDAJE 2: Evitar duplicados en el roster
+        // BLINDAJE: Evitar duplicados en el roster
         if (!target.roster.some(r => r.playerId === playerId)) {
             target.roster.push({ playerId, role: 'TITULAR' });
         }
@@ -123,7 +123,7 @@ export function createContract(payload) {
       if (origin) origin.roster = origin.roster.filter(r => r.playerId !== playerId);
       
       if (target) {
-        // BLINDAJE 2: Evitar duplicados en el roster
+        // BLINDAJE: Evitar duplicados en el roster
         if (!target.roster.some(r => r.playerId === playerId)) {
             target.roster.push({ playerId, role: 'TITULAR' });
         }
@@ -346,7 +346,7 @@ export function finalizeContractInternal(d, contract, reason) {
   // REGRESO NORMAL (PRÉSTAMO COMPLETADO)
   if (current) current.roster = current.roster.filter(r => r.playerId !== contract.playerId);
   
-  // BLINDAJE 3: Evitar duplicados en el roster al regresar
+  // BLINDAJE: Evitar duplicados en el roster al regresar
   if (!origin.roster.some(r => r.playerId === contract.playerId)) {
       origin.roster.push({ playerId: contract.playerId, role: 'SUPLENTE' });
   }
@@ -449,7 +449,7 @@ export function resolveAwaitingReturn(contractId) {
       current.roster = current.roster.filter(r => r.playerId !== c.playerId);
     }
 
-    // BLINDAJE 4: Evitar duplicados al resolver manualmente
+    // BLINDAJE: Evitar duplicados al resolver manualmente
     if (!origin.roster.some(r => r.playerId === c.playerId)) {
         origin.roster.push({ playerId: c.playerId, role: 'SUPLENTE' });
     }
