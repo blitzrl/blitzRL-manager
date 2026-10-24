@@ -102,12 +102,6 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset, customPrice
     const targetTeam = db.teams.find(t => t.id === targetTeamId);
     if (!player || !targetTeam) return toast('Datos inválidos', 'error');
 
-    // Si el jugador ya está en el equipo destino, evitamos duplicarlo
-    if ((targetTeam.roster || []).some(r => r.playerId === playerId) && !forceReset) {
-      console.log("El jugador ya está en el equipo destino. Evitando duplicación.");
-      return; 
-    }
-
     const stats = aggregatePlayerStats().find(s => s.id === playerId);
     const priceData = calculatePlayerPrice(player, stats, db.config.economy);
     const price = customPrice !== null ? customPrice : priceData.price;
@@ -165,7 +159,8 @@ export function doTransferPlayer(playerId, targetTeamId, forceReset, customPrice
       } else {
         pl.status = 'owned';
         pl.pendingTeamId = null;
-        // LA VALIDACIÓN CLAVE: Solo agregar al roster si no está ya
+        
+        // BLINDAJE 1: Evitar duplicados en el roster
         if (!tt.roster.some(r => r.playerId === playerId)) {
             tt.roster.push({ playerId, role: 'SUPLENTE' });
         }
