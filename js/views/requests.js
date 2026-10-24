@@ -2,11 +2,10 @@ import { getDB, mutate } from '../services/storage.js';
 import { getSupabase } from '../services/supabase.js';
 import { toast } from '../services/ui.js';
 import { createContract } from '../services/contracts.js';
-// import { doTransferPlayer } from '../services/transfers.js'; // <-- ELIMINADO
 
 let _requests = [];
 let _loading = false;
-const _processingAutoRequests = new Set(); 
+const _processingIds = new Set();
 
 export function requestsView() {
   setTimeout(() => loadRequests(), 100);
@@ -34,8 +33,9 @@ export async function processAutoRequests() {
   window.__isProcessingAutoRequests = true;
 
   const sb = getSupabase();
-
   try {
+    // 1. Buscamos las ofertas que necesitan procesamiento.
+    // Solo tomamos las que están en 'accepted_by_target'.
     const { data, error } = await sb.from('coach_requests')
       .select('*')
       .eq('status', 'accepted_by_target');
@@ -43,30 +43,32 @@ export async function processAutoRequests() {
     if (error || !data || data.length === 0) return;
 
     for (const req of data) {
-      if (_processingAutoRequests.has(req.id)) continue;
-      
+      // Si ya la estamos procesando en este ciclo, la ignoramos.
+      if (_processingIds.has(req.id)) continue;
+
       const payload = req.payload;
       try {
-        _processingAutoRequests.add(req.id);
+        _processingIds.add(req.id);
 
-        const { data: lockData, error: lockErr } = await sb.from('coach_requests')
+        // 2. MARCAMOS LA OFERTA COMO 'processing' INMEDIATAMENTE.
+        // Si otro proceso intenta leerla, ya no la verá en 'accepted_by_target'.
+        const { error: lockErr } = await sb.from('coach_requests')
           .update({ status: 'processing' })
           .eq('id', req.id)
-          .eq('status', 'accepted_by_target')
-          .select();
+          .eq('status', 'accepted_by_target');
 
-        if (lockErr || !lockData || lockData.length === 0) {
-          _processingAutoRequests.delete(req.id);
-          continue;
+        if (lockErr) {
+            _processingIds.delete(req.id);
+            continue;
         }
 
-        // 1. REFRESCAR DATOS
+        // 3. REFRESCAMOS LOS DATOS LOCALES
         const { downloadAll } = await import('../services/supabase.js');
         const remoteDB = await downloadAll();
         const { setRawDB } = await import('../services/storage.js');
         setRawDB({ ...remoteDB, viewSeasonId: getDB().viewSeasonId });
 
-        // 2. EJECUTAR SOLO createContract (Evita la duplicación)
+        // 4. CREAMOS EL CONTRATO (Solo esta función mueve al jugador y el dinero)
         if (req.type === 'transfer_offer') {
           createContract({
             playerId: payload.playerId, type: 'permanent', currentTeamId: req.from_team_id, ownerTeamId: req.to_team_id,
@@ -86,7 +88,7 @@ export async function processAutoRequests() {
           });
         }
         
-        // 3. MARCAR COMO APROBADO
+        // 5. MARCAMOS COMO APROBADO
         await sb.from('coach_requests').update({ 
           status: 'approved_by_admin', 
           admin_response_at: new Date().toISOString(), 
@@ -98,9 +100,10 @@ export async function processAutoRequests() {
       } catch (err) {
         console.error('Error auto-fichaje:', err);
         toast('Error auto-fichaje: ' + err.message, 'error');
+        // Si falla, devolvemos a 'accepted_by_target' para que se reintente.
         await sb.from('coach_requests').update({ status: 'accepted_by_target' }).eq('id', req.id);
       } finally {
-        _processingAutoRequests.delete(req.id);
+        _processingIds.delete(req.id);
       }
     }
   } catch (err) {
@@ -121,21 +124,12 @@ async function loadRequests() {
     const sb = getSupabase();
     const { data, error } = await sb.from('coach_requests')
       .select('*')
-      .in('status', ['pending', 'accepted_by_target', 'processing'])
+      .eq('status', 'pending')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
     
-    await processAutoRequests();
-
-    const { data: freshData, error: freshError } = await sb.from('coach_requests')
-      .select('*')
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false });
-
-    if (freshError) throw freshError;
-    _requests = freshData || [];
-    
+    _requests = data || [];
     if (countEl) countEl.textContent = `${_requests.length} pendientes`;
     
     if (listEl) {
@@ -241,7 +235,6 @@ async function approveRequest(reqId) {
       });
     } 
     else if (req.type === 'free_agent_sign') {
-      // Para agentes libres usamos createContract. No hay dueño previo, así que no hay doble cobro.
       createContract({
         playerId: payload.playerId, type: 'permanent', currentTeamId: req.from_team_id, ownerTeamId: req.from_team_id,
         durationSeasons: 1, durationMatchdays: 0, uniquePrice: payload.price || 0,
