@@ -1,272 +1,9 @@
-import { getDB, mutate } from '../services/storage.js';
-import { getSupabase } from '../services/supabase.js';
-import { toast } from '../services/ui.js';
-import { createContract } from '../services/contracts.js';
-
-let _requests = [];
-let _loading = false;
-const _processingIds = new Set();
-
-export function requestsView() {
-  setTimeout(() => loadRequests(), 100);
-
-  return `
-    <div class="page-head">
-      <h1 class="page-title">SOLICITUDES Y NEGOCIACIONES</h1>
-      <button class="btn" id="btnRefreshRequests">↻ ACTUALIZAR</button>
-    </div>
-
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title"><span class="dot">◆</span>BANDEJA DE ENTRADA</div>
-        <span class="card-sub" id="reqCount">Cargando...</span>
-      </div>
-      <div id="requestsList">
-        <div style="text-align:center;padding:20px;color:var(--muted)">Cargando solicitudes de Supabase...</div>
-      </div>
-    </div>
-  `;
-}
-
-export async function processAutoRequests() {
-  if (window.__isProcessingAutoRequests) return;
-  window.__isProcessingAutoRequests = true;
-
-  const sb = getSupabase();
-  try {
-    const { data, error } = await sb.from('coach_requests')
-      .select('*')
-      .eq('status', 'accepted_by_target');
-
-    if (error || !data || data.length === 0) return;
-
-    for (const req of data) {
-      if (_processingIds.has(req.id)) continue;
-
-      const payload = req.payload;
-      try {
-        _processingIds.add(req.id);
-
-        const { data: lockData, error: lockErr } = await sb.from('coach_requests')
-          .update({ status: 'processing' })
-          .eq('id', req.id)
-          .eq('status', 'accepted_by_target')
-          .select();
-
-        if (lockErr || !lockData || lockData.length === 0) {
-          _processingIds.delete(req.id);
-          continue;
-        }
-
-        if (req.type === 'transfer_offer') {
-          await createContract({
-            playerId: payload.playerId, type: 'permanent', currentTeamId: req.from_team_id, ownerTeamId: req.to_team_id,
-            durationSeasons: payload.durationSeasons || 1, durationMatchdays: payload.durationMatchdays || 0,
-            uniquePrice: payload.uniquePrice || 0, performanceEnabled: payload.performanceEnabled || false,
-            performanceTargets: payload.performanceTargets || {}, renewalOptionEnabled: payload.renewalOptionEnabled || false,
-            renewalPrice: payload.renewalPrice || 0, sellOnClauses: payload.sellOnClauses || [], autoReturnOnElimination: true
-          });
-        } 
-        else if (req.type === 'loan_request') {
-          await createContract({
-            playerId: payload.playerId, type: 'loan', currentTeamId: req.from_team_id, ownerTeamId: req.to_team_id,
-            durationSeasons: payload.durationSeasons || 0, durationMatchdays: payload.durationMatchdays || 0,
-            uniquePrice: payload.uniquePrice || 0, perMatchdayPrice: payload.perMatchdayPrice || 0,
-            performanceEnabled: payload.performanceEnabled || false, performanceTargets: payload.performanceTargets || {},
-            renewalOptionEnabled: false, renewalPrice: 0, sellOnClauses: [], autoReturnOnElimination: true
-          });
-        }
-        
-        await sb.from('coach_requests').update({ 
-          status: 'approved_by_admin', 
-          admin_response_at: new Date().toISOString(), 
-          admin_response_note: 'Auto-aprobado por el sistema' 
-        }).eq('id', req.id);
-        
-        toast(`✅ Procesado automáticamente: ${payload.playerName}`, 'success');
-
-      } catch (err) {
-        console.error('Error auto-fichaje:', err);
-        toast('Error auto-fichaje: ' + err.message, 'error');
-        await sb.from('coach_requests').update({ status: 'accepted_by_target' }).eq('id', req.id);
-      } finally {
-        _processingIds.delete(req.id);
-      }
-    }
-  } catch (err) {
-    console.error('[AUTO-REQUESTS] Error:', err);
-  } finally {
-    window.__isProcessingAutoRequests = false;
-  }
-}
-
-async function loadRequests() {
-  if (_loading) return;
-  _loading = true;
-  
-  const listEl = document.getElementById('requestsList');
-  const countEl = document.getElementById('reqCount');
-  
-  try {
-    const sb = getSupabase();
-    const { data, error } = await sb.from('coach_requests')
-      .select('*')
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    
-    _requests = data || [];
-    if (countEl) countEl.textContent = `${_requests.length} pendientes`;
-    
-    if (listEl) {
-      if (_requests.length === 0) {
-        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">No hay solicitudes pendientes.</div>';
-      } else {
-        listEl.innerHTML = _requests.map(req => renderRequestCard(req)).join('');
-        bindRequestButtons();
-      }
-    }
-
-  } catch (err) {
-    console.error('[REQUESTS] Error al cargar:', err);
-    if (listEl) listEl.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger)">Error al cargar: ${err.message}</div>`;
-  } finally {
-    _loading = false;
-  }
-}
-
-function renderRequestCard(req) {
-  const payload = req.payload || {};
-  const db = getDB();
-  
-  const fromTeam = db.teams.find(t => t.id === req.from_team_id)?.name || 'Equipo';
-  const toTeam = db.teams.find(t => t.id === req.to_team_id)?.name || 'Agente Libre';
-  const coach = db.coaches.find(c => c.id === req.from_coach_id)?.name || 'Coach';
-  
-  let typeLabel = 'CAMBIO';
-  if (req.type === 'transfer_offer') typeLabel = '💰 FICHAJE';
-  else if (req.type === 'loan_request') typeLabel = '📤 PRÉSTAMO';
-  else if (req.type === 'free_agent_sign') typeLabel = '📋 FICHAJE LIBRE';
-  else if (req.type === 'lineup_change') typeLabel = '⚙️ CAMBIO DE ALINEACIÓN';
-
-  let clausesHTML = '';
-  if (req.type === 'lineup_change') {
-    clausesHTML = `<div><b>Jugadores involucrados:</b> ${payload.newLineup?.length || 0} (Actualización de roles)</div>`;
-  } else {
-    if (payload.durationSeasons) clausesHTML += `<div><b>Duración:</b> ${payload.durationSeasons} Temporadas ${payload.durationMatchdays ? `+ ${payload.durationMatchdays} Jornadas` : ''}</div>`;
-    if (payload.uniquePrice > 0) clausesHTML += `<div><b>Precio:</b> $${payload.uniquePrice.toLocaleString('en-US')}</div>`;
-    if (payload.sellOnClause) clausesHTML += `<div><b>Futura Venta:</b> ${payload.sellOnPercentage}% x ${payload.sellOnSales} ventas</div>`;
-    if (payload.performanceEnabled) clausesHTML += `<div><b>Metas:</b> ${payload.performanceTargets.goals?.enabled ? 'Goles ' + payload.performanceTargets.goals.min : ''} ${payload.performanceTargets.assists?.enabled ? 'Asist ' + payload.performanceTargets.assists.min : ''}</div>`;
-  }
-
-  return `
-    <div class="card" style="margin-bottom:10px; border-left:4px solid var(--accent)">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px">
-        <div>
-          <div style="font-size:14px; font-weight:600; color:var(--silver-light); margin-bottom:4px;">
-            ${typeLabel} · ${fromTeam} ${toTeam !== 'Agente Libre' ? '→ '+toTeam : ''}
-          </div>
-          <div style="font-size:13px; color:var(--silver); margin:8px 0; background:var(--bg-graphite); padding:10px; border-radius:6px; display:flex; flex-direction:column; gap:4px;">
-            <div><b>Jugador:</b> ${payload.playerName || 'Múltiples'}</div>
-            ${clausesHTML}
-          </div>
-          
-          ${payload.customMessage ? `
-            <div style="font-size:12px; color:var(--accent); font-style:italic; padding:8px; border-left:2px solid var(--accent); background:rgba(111,168,255,0.05); margin-bottom:8px;">
-              "${payload.customMessage}"
-            </div>
-          ` : ''}
-          
-          <div style="font-size:11px; color:var(--muted);">
-            Solicitado por ${coach} el ${new Date(req.created_at).toLocaleString()}
-          </div>
-        </div>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <span class="badge badge-live">ESPERANDO</span>
-          ${req.type === 'free_agent_sign' || req.type === 'lineup_change' ? `
-            <button class="btn btn-sm btn-primary" data-approve-req="${req.id}">✅ APROBAR</button>
-            <button class="btn btn-sm btn-danger" data-reject-req="${req.id}">❌ RECHAZAR</button>
-          ` : ''}
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-export function bindRequestsEvents() {
-  document.getElementById('btnRefreshRequests')?.addEventListener('click', () => {
-    loadRequests();
-  });
-}
-
-function bindRequestButtons() {
-  document.querySelectorAll('[data-approve-req]').forEach(btn => {
-    btn.addEventListener('click', () => approveRequest(btn.dataset.approveReq));
-  });
-  document.querySelectorAll('[data-reject-req]').forEach(btn => {
-    btn.addEventListener('click', () => rejectRequest(btn.dataset.rejectReq));
-  });
-}
-
-async function approveRequest(reqId) {
-  const req = _requests.find(r => r.id === reqId);
-  if (!req) return;
-  
-  const payload = req.payload;
-  try {
-    if (req.type === 'lineup_change') {
-      mutate(d => {
-        const team = d.teams.find(t => t.id === req.from_team_id);
-        if (team) team.roster = payload.newLineup;
-      });
-    } 
-    else if (req.type === 'free_agent_sign') {
-      await createContract({
-        playerId: payload.playerId, type: 'permanent', currentTeamId: req.from_team_id, ownerTeamId: req.from_team_id,
-        durationSeasons: 1, durationMatchdays: 0, uniquePrice: payload.price || 0,
-        performanceEnabled: false, performanceTargets: {}, renewalOptionEnabled: false,
-        renewalPrice: 0, sellOnClauses: [], autoReturnOnElimination: true
-      });
-    }
-    
-    await updateRequestStatus(reqId, 'approved_by_admin', 'Aprobado por el admin');
-    
-  } catch (e) {
-    toast('Error al ejecutar: ' + e.message, 'error');
-  }
-}
-
-async function rejectRequest(reqId) {
-  await updateRequestStatus(reqId, 'rejected_by_admin', 'Rechazado por el administrador');
-}
-
-async function updateRequestStatus(reqId, status, note) {
-  try {
-    const sb = getSupabase();
-    const { error } = await sb.from('coach_requests').update({ 
-      status: status,
-      admin_response_at: new Date().toISOString(),
-      admin_response_note: note
-    }).eq('id', reqId);
-    
-    if (error) throw error;
-    
-    toast('Solicitud procesada', 'success');
-    loadRequests();
-  } catch (e) {
-    console.error(e);
-    toast('Error al actualizar estado: ' + e.message, 'error');
-  }
-}
-
 // ============================================================
 // PUENTE DE REGISTRO: Escucha las ofertas que el Portal completó
 // ============================================================
 export async function syncPortalTransfers() {
   const sb = getSupabase();
   
-  // Buscamos las ofertas que el Portal marcó como completadas
   const { data, error } = await sb.from('coach_requests')
     .select('*')
     .eq('status', 'completed')
@@ -284,65 +21,92 @@ export async function syncPortalTransfers() {
       mutate(d => {
         const p = d.players.find(x => x.id === payload.playerId);
         
-        // 🔄 CORRECCIÓN DE LÓGICA: Invertimos los equipos porque el Portal los guarda al revés
-        // El equipo "from" del Portal es el que recibe (compra), el "to" es el que vende.
+        // 🔄 CORRECCIÓN DE LÓGICA: Invertimos los equipos
         const origin = d.teams.find(t => t.id === req.to_team_id); // Vendedor
         const target = d.teams.find(t => t.id === req.from_team_id); // Comprador
 
         if (p && target) {
-          // 1. Crear el registro en el TransferLog
-          d.transferLog.push({
-            id: 'mov_' + Date.now(), 
-            playerId: p.id, 
-            playerName: p.name,
-            fromTeamId: origin?.id || null, 
-            fromTeamName: origin?.name || 'Agente Libre',
-            toTeamId: target.id, 
-            toTeamName: target.name,
-            fromDivisionId: origin?.divisionId || null, 
-            toDivisionId: target.divisionId,
-            date: Date.now(), 
-            type: req.type === 'loan_request' ? 'loan' : 'transfer', 
-            price: payload.uniquePrice || 0
-          });
+          // 1. Crear el registro en el TransferLog (SOLO si no es firma interna)
+          if (!payload.is_internal_signing) {
+            d.transferLog.push({
+              id: 'mov_' + Date.now(), 
+              playerId: p.id, 
+              playerName: p.name,
+              fromTeamId: origin?.id || null, 
+              fromTeamName: origin?.name || 'Agente Libre',
+              toTeamId: target.id, 
+              toTeamName: target.name,
+              fromDivisionId: origin?.divisionId || null, 
+              toDivisionId: target.divisionId,
+              date: Date.now(), 
+              type: req.type === 'loan_request' ? 'loan' : 'transfer', 
+              price: payload.uniquePrice || 0
+            });
 
-          // 2. Crear el registro en el EconomyLedger
-          if (payload.uniquePrice > 0) {
-             d.economyLedger ||= [];
-             // El que recibe (target) paga
-             d.economyLedger.unshift({
-                id: 'led_' + Date.now(), 
-                ts: Date.now(), 
-                type: 'transfer', 
-                teamId: target.id, 
-                teamName: target.name,
-                amount: -payload.uniquePrice, 
-                reason: `Fichaje: ${p.name}`, 
-                meta: { playerId: p.id, fromTeamId: origin?.id || null }
-             });
-             // El que vende (origin) cobra
-             if (origin) {
-                d.economyLedger.unshift({
+            // 2. Crear el registro en el EconomyLedger
+            if (payload.uniquePrice > 0) {
+               d.economyLedger ||= [];
+               d.economyLedger.unshift({
                   id: 'led_' + Date.now(), 
                   ts: Date.now(), 
                   type: 'transfer', 
-                  teamId: origin.id, 
-                  teamName: origin.name,
-                  amount: payload.uniquePrice, 
-                  reason: `Venta: ${p.name}`, 
-                  meta: { playerId: p.id, toTeamId: target.id }
-                });
-             }
+                  teamId: target.id, 
+                  teamName: target.name,
+                  amount: -payload.uniquePrice, 
+                  reason: `Fichaje: ${p.name}`, 
+                  meta: { playerId: p.id, fromTeamId: origin?.id || null }
+               });
+               if (origin) {
+                  d.economyLedger.unshift({
+                    id: 'led_' + Date.now(), 
+                    ts: Date.now(), 
+                    type: 'transfer', 
+                    teamId: origin.id, 
+                    teamName: origin.name,
+                    amount: payload.uniquePrice, 
+                    reason: `Venta: ${p.name}`, 
+                    meta: { playerId: p.id, toTeamId: target.id }
+                  });
+               }
+            }
           }
+
+          // 3. Crear el CONTRATO (Aquí estaba el error de no generarlo en firmas internas)
+          // Este bloque simula la creación del contrato en el Gestor
+          const contractId = 'cnt_' + Date.now();
+          d.contracts.push({
+            id: contractId,
+            type: req.type === 'loan_request' ? 'loan' : 'permanent',
+            status: 'active',
+            playerId: p.id,
+            ownerTeamId: target.id,
+            teamId: target.id,
+            startSeasonId: d.seasons.find(s=>s.active)?.id,
+            endSeasonId: d.seasons.find(s=>s.active)?.id,
+            durationSeasons: payload.durationSeasons || 1,
+            durationMatchdays: payload.durationMatchdays || 0,
+            endMatchday: 0,
+            transferPrice: payload.uniquePrice || 0,
+            clauses: {
+              perMatchday: { enabled: (payload.perMatchdayPrice || 0) > 0, amount: payload.perMatchdayPrice || 0, chargeEvenIfNotPlayed: payload.chargeEvenIfNotPlayed },
+              performance: { enabled: payload.performanceEnabled, targets: payload.performanceTargets || {}, onFail: 'free_agent' },
+              renewalOption: { enabled: payload.renewalOptionEnabled, price: payload.renewalPrice || 0 },
+              sellOnClauses: payload.sellOnClauses || []
+            },
+            stats: { matchdaysCharged: 0, totalCharged: 0, gamesPlayed: 0, goals: 0, assists: 0, saves: 0, shots: 0, efficiency: 0 },
+            createdAt: Date.now()
+          });
+
+          p.contractId = contractId;
         }
       });
 
-      // 3. Marcar como "sync_done" para no volver a procesarla
+      // Marcar como "sync_done" para no volver a procesarla
       await sb.from('coach_requests')
         .update({ status: 'sync_done', admin_response_note: 'Registrado en el Gestor' })
         .eq('id', req.id);
 
-      console.log(`[PORTAL SYNC] Movimiento de ${payload.playerName} registrado correctamente.`);
+      console.log(`[PORTAL SYNC] ${payload.is_internal_signing ? 'Contrato firmado' : 'Movimiento'} de ${payload.playerName} registrado.`);
 
     } catch (e) {
       console.error('Error al sincronizar movimiento:', e);
