@@ -6,7 +6,6 @@ import { doTransferPlayer } from '../services/transfers.js';
 
 let _requests = [];
 let _loading = false;
-const _processingAutoRequests = new Set(); // <-- LOCK EN MEMORIA
 
 export function requestsView() {
   setTimeout(() => loadRequests(), 100);
@@ -29,11 +28,13 @@ export function requestsView() {
   `;
 }
 
-// AUTO-PROCESAMIENTO BLINDADO CONTRA DUPLICADOS
 export async function processAutoRequests() {
+  // 1. BLOQUEO GLOBAL: Si ya hay un proceso corriendo, evitamos que entre otro.
+  if (window.__isProcessingAutoRequests) return;
+  window.__isProcessingAutoRequests = true;
+
   const sb = getSupabase();
   try {
-    // 1. Buscamos ofertas que estén aceptadas.
     const { data, error } = await sb.from('coach_requests')
       .select('*')
       .eq('status', 'accepted_by_target');
@@ -41,15 +42,9 @@ export async function processAutoRequests() {
     if (error || !data || data.length === 0) return;
 
     for (const req of data) {
-      // SI YA ESTÁ EN MEMORIA, LO SALTAMOS
-      if (_processingAutoRequests.has(req.id)) continue;
-      
-      const payload = req.payload;
       try {
-        // LO MARCAMOS EN MEMORIA PARA BLOQUEAR AL REALTIME
-        _processingAutoRequests.add(req.id);
-
-        // 2. BLOQUEO EN BD (Doble seguridad)
+        // 2. BLOQUEO EN BASE DE DATOS (Atómico)
+        // Solo el proceso que logre cambiar el estado a 'processing' puede continuar.
         const { data: lockData, error: lockErr } = await sb.from('coach_requests')
           .update({ status: 'processing' })
           .eq('id', req.id)
@@ -57,11 +52,18 @@ export async function processAutoRequests() {
           .select();
 
         if (lockErr || !lockData || lockData.length === 0) {
-          _processingAutoRequests.delete(req.id);
-          continue;
+          continue; // Otro proceso ya lo tomó, lo ignoramos.
         }
 
-        // 3. Ejecutamos la transacción
+        // 3. REFRESCAR DATOS EN MEMORIA
+        // Para evitar duplicar al jugador, el Gestor debe leer el estado exacto actual de Supabase antes de hacer cambios.
+        const { downloadAll } = await import('../services/supabase.js');
+        const remoteDB = await downloadAll();
+        const { setRawDB } = await import('../services/storage.js');
+        setRawDB({ ...remoteDB, viewSeasonId: getDB().viewSeasonId });
+
+        // 4. EJECUTAR TRANSACCIÓN
+        const payload = req.payload;
         if (req.type === 'transfer_offer') {
           doTransferPlayer(payload.playerId, req.from_team_id, false, payload.uniquePrice || 0);
           createContract({
@@ -83,7 +85,7 @@ export async function processAutoRequests() {
           });
         }
         
-        // 4. Marcamos como aprobado definitivamente.
+        // 5. MARCAR COMO APROBADO
         await sb.from('coach_requests').update({ 
           status: 'approved_by_admin', 
           admin_response_at: new Date().toISOString(), 
@@ -95,13 +97,15 @@ export async function processAutoRequests() {
       } catch (err) {
         console.error('Error auto-fichaje:', err);
         toast('Error auto-fichaje: ' + err.message, 'error');
+        // Si falla, devolvemos el estado para que se reintente después
         await sb.from('coach_requests').update({ status: 'accepted_by_target' }).eq('id', req.id);
-      } finally {
-        _processingAutoRequests.delete(req.id); // <-- LIMPIAMOS EL LOCK
       }
     }
   } catch (err) {
     console.error('[AUTO-REQUESTS] Error:', err);
+  } finally {
+    // 6. LIBERAMOS EL BLOQUEO GLOBAL
+    window.__isProcessingAutoRequests = false;
   }
 }
 
