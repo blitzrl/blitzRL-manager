@@ -29,11 +29,12 @@ export function requestsView() {
 }
 
 export async function processAutoRequests() {
-  // 1. BLOQUEO GLOBAL: Si ya hay un proceso corriendo, evitamos que entre otro.
   if (window.__isProcessingAutoRequests) return;
   window.__isProcessingAutoRequests = true;
 
   const sb = getSupabase();
+  const processedPlayerIds = new Set(); // <-- EVITA DUPLICADOS EN EL MISMO LOTE
+
   try {
     const { data, error } = await sb.from('coach_requests')
       .select('*')
@@ -42,9 +43,16 @@ export async function processAutoRequests() {
     if (error || !data || data.length === 0) return;
 
     for (const req of data) {
+      const payload = req.payload;
+      
+      // SI YA PROCESAMOS A ESTE JUGADOR EN ESTA RONDA, LO SALTAMOS
+      if (processedPlayerIds.has(payload.playerId)) {
+        console.warn(`Oferta duplicada detectada para ${payload.playerName}. Cancelando duplicado.`);
+        await sb.from('coach_requests').update({ status: 'rejected_duplicate' }).eq('id', req.id);
+        continue; 
+      }
+
       try {
-        // 2. BLOQUEO EN BASE DE DATOS (Atómico)
-        // Solo el proceso que logre cambiar el estado a 'processing' puede continuar.
         const { data: lockData, error: lockErr } = await sb.from('coach_requests')
           .update({ status: 'processing' })
           .eq('id', req.id)
@@ -52,18 +60,18 @@ export async function processAutoRequests() {
           .select();
 
         if (lockErr || !lockData || lockData.length === 0) {
-          continue; // Otro proceso ya lo tomó, lo ignoramos.
+          continue; 
         }
 
-        // 3. REFRESCAR DATOS EN MEMORIA
-        // Para evitar duplicar al jugador, el Gestor debe leer el estado exacto actual de Supabase antes de hacer cambios.
+        // MARCAMOS AL JUGADOR COMO PROCESADO
+        processedPlayerIds.add(payload.playerId);
+
+        // REFRESCAR DATOS
         const { downloadAll } = await import('../services/supabase.js');
         const remoteDB = await downloadAll();
         const { setRawDB } = await import('../services/storage.js');
         setRawDB({ ...remoteDB, viewSeasonId: getDB().viewSeasonId });
 
-        // 4. EJECUTAR TRANSACCIÓN
-        const payload = req.payload;
         if (req.type === 'transfer_offer') {
           doTransferPlayer(payload.playerId, req.from_team_id, false, payload.uniquePrice || 0);
           createContract({
@@ -85,7 +93,6 @@ export async function processAutoRequests() {
           });
         }
         
-        // 5. MARCAR COMO APROBADO
         await sb.from('coach_requests').update({ 
           status: 'approved_by_admin', 
           admin_response_at: new Date().toISOString(), 
@@ -97,14 +104,12 @@ export async function processAutoRequests() {
       } catch (err) {
         console.error('Error auto-fichaje:', err);
         toast('Error auto-fichaje: ' + err.message, 'error');
-        // Si falla, devolvemos el estado para que se reintente después
         await sb.from('coach_requests').update({ status: 'accepted_by_target' }).eq('id', req.id);
       }
     }
   } catch (err) {
     console.error('[AUTO-REQUESTS] Error:', err);
   } finally {
-    // 6. LIBERAMOS EL BLOQUEO GLOBAL
     window.__isProcessingAutoRequests = false;
   }
 }
