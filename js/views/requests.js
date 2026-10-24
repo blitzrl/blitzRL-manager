@@ -34,8 +34,7 @@ export async function processAutoRequests() {
 
   const sb = getSupabase();
   try {
-    // 1. Buscamos las ofertas que necesitan procesamiento.
-    // Solo tomamos las que están en 'accepted_by_target'.
+    // 1. FILTRAR SOLO LAS ACEPTADAS POR EL PORTAL
     const { data, error } = await sb.from('coach_requests')
       .select('*')
       .eq('status', 'accepted_by_target');
@@ -43,32 +42,26 @@ export async function processAutoRequests() {
     if (error || !data || data.length === 0) return;
 
     for (const req of data) {
-      // Si ya la estamos procesando en este ciclo, la ignoramos.
       if (_processingIds.has(req.id)) continue;
 
       const payload = req.payload;
       try {
         _processingIds.add(req.id);
 
-        // 2. MARCAMOS LA OFERTA COMO 'processing' INMEDIATAMENTE.
-        // Si otro proceso intenta leerla, ya no la verá en 'accepted_by_target'.
-        const { error: lockErr } = await sb.from('coach_requests')
+        // 2. BLOQUEAR LA OFERTA (Evita que otro proceso la tome)
+        const { data: lockData, error: lockErr } = await sb.from('coach_requests')
           .update({ status: 'processing' })
           .eq('id', req.id)
-          .eq('status', 'accepted_by_target');
+          .eq('status', 'accepted_by_target')
+          .select();
 
-        if (lockErr) {
-            _processingIds.delete(req.id);
-            continue;
+        if (lockErr || !lockData || lockData.length === 0) {
+          _processingIds.delete(req.id);
+          continue; 
         }
 
-        // 3. REFRESCAMOS LOS DATOS LOCALES
-        const { downloadAll } = await import('../services/supabase.js');
-        const remoteDB = await downloadAll();
-        const { setRawDB } = await import('../services/storage.js');
-        setRawDB({ ...remoteDB, viewSeasonId: getDB().viewSeasonId });
-
-        // 4. CREAMOS EL CONTRATO (Solo esta función mueve al jugador y el dinero)
+        // 3. CREAR EL CONTRATO (Esto mueve al jugador, cobra el dinero y actualiza el historial)
+        // NO HACEMOS downloadAll() PARA EVITAR LA DUPLICACIÓN
         if (req.type === 'transfer_offer') {
           createContract({
             playerId: payload.playerId, type: 'permanent', currentTeamId: req.from_team_id, ownerTeamId: req.to_team_id,
@@ -88,7 +81,7 @@ export async function processAutoRequests() {
           });
         }
         
-        // 5. MARCAMOS COMO APROBADO
+        // 4. MARCAR LA OFERTA COMO APROBADA DEFINITIVAMENTE
         await sb.from('coach_requests').update({ 
           status: 'approved_by_admin', 
           admin_response_at: new Date().toISOString(), 
