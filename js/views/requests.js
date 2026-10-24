@@ -260,9 +260,6 @@ async function updateRequestStatus(reqId, status, note) {
   }
 }
 
-// ============================================================
-// PUENTE DE REGISTRO: Escucha las ofertas que el Portal completó
-// ============================================================
 export async function syncPortalTransfers() {
   const sb = getSupabase();
   
@@ -282,14 +279,10 @@ export async function syncPortalTransfers() {
       
       mutate(d => {
         const p = d.players.find(x => x.id === payload.playerId);
-        
-        // 🔄 CORRECCIÓN DE LÓGICA: Invertimos los equipos (El Portal los guarda al revés)
-        // req.from_team_id es el comprador, req.to_team_id es el vendedor
         const origin = d.teams.find(t => t.id === req.to_team_id); 
         const target = d.teams.find(t => t.id === req.from_team_id); 
 
         if (p && target) {
-          // 1. Registrar en TransferLog y EconomyLedger (Solo si NO es firma interna)
           if (!payload.is_internal_signing) {
             d.transferLog.push({
               id: 'mov_' + Date.now(), 
@@ -333,7 +326,6 @@ export async function syncPortalTransfers() {
             }
           }
 
-          // 2. Crear el CONTRATO (Aplica para traspasos y firmas internas)
           const contractId = 'cnt_' + Date.now();
           d.contracts.push({
             id: contractId,
@@ -362,7 +354,6 @@ export async function syncPortalTransfers() {
         }
       });
 
-      // 3. Marcar como "sync_done" para no volver a procesarla
       await sb.from('coach_requests')
         .update({ status: 'sync_done', admin_response_note: 'Registrado en el Gestor' })
         .eq('id', req.id);
