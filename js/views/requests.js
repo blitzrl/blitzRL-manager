@@ -283,51 +283,67 @@ export async function syncPortalTransfers() {
       
       mutate(d => {
         const p = d.players.find(x => x.id === payload.playerId);
-        const origin = d.teams.find(t => t.id === req.from_team_id);
-        const target = d.teams.find(t => t.id === req.to_team_id);
+        
+        // 🔄 SOLUCIÓN AL MOVIMIENTO INVERTIDO:
+        // Usamos los IDs del PAYLOAD (el movimiento real del jugador), no los de la fila de la request.
+        const sellerId = payload.from_team_id || payload.targetTeamId; 
+        const buyerId = payload.targetTeamId || req.from_team_id;
 
-        if (p && target) {
-          // 1. Crear el registro en el TransferLog
+        // Buscamos los equipos correctos basándonos en el flujo real del jugador
+        let seller = d.teams.find(t => t.id === sellerId);
+        let buyer = d.teams.find(t => t.id === buyerId);
+
+        // Si aún así están invertidos (porque la request se creó desde el equipo comprador), los cruzamos
+        if (seller && buyer && seller.id === req.to_team_id) {
+           const temp = seller;
+           seller = buyer;
+           buyer = temp;
+        }
+
+        if (p && buyer && seller) {
+          // 1. Crear el registro en el TransferLog (Visualizador y Gestor)
           d.transferLog.push({
             id: 'mov_' + Date.now(), 
             playerId: p.id, 
             playerName: p.name,
-            fromTeamId: origin?.id || null, 
-            fromTeamName: origin?.name || 'Agente Libre',
-            toTeamId: target.id, 
-            toTeamName: target.name,
-            fromDivisionId: origin?.divisionId || null, 
-            toDivisionId: target.divisionId,
+            fromTeamId: seller.id, 
+            fromTeamName: seller.name,
+            toTeamId: buyer.id, 
+            toTeamName: buyer.name,
+            fromDivisionId: seller.divisionId || null, 
+            toDivisionId: buyer.divisionId,
             date: Date.now(), 
             type: req.type === 'loan_request' ? 'loan' : 'transfer', 
             price: payload.uniquePrice || 0
           });
 
-          // 2. Crear el registro en el EconomyLedger
+          // 2. Crear el registro en el EconomyLedger (El dinero invertido correctamente)
           if (payload.uniquePrice > 0) {
              d.economyLedger ||= [];
+             
+             // El comprador (buyer) paga el dinero
              d.economyLedger.unshift({
-                id: 'led_' + Date.now(), 
+                id: 'led_buy_' + Date.now(), 
                 ts: Date.now(), 
                 type: 'transfer', 
-                teamId: target.id, 
-                teamName: target.name,
+                teamId: buyer.id, 
+                teamName: buyer.name,
                 amount: -payload.uniquePrice, 
                 reason: `Fichaje: ${p.name}`, 
-                meta: { playerId: p.id, fromTeamId: origin?.id || null }
+                meta: { playerId: p.id, fromTeamId: seller.id }
              });
-             if (origin) {
-                d.economyLedger.unshift({
-                  id: 'led_' + Date.now(), 
-                  ts: Date.now(), 
-                  type: 'transfer', 
-                  teamId: origin.id, 
-                  teamName: origin.name,
-                  amount: payload.uniquePrice, 
-                  reason: `Venta: ${p.name}`, 
-                  meta: { playerId: p.id, toTeamId: target.id }
-                });
-             }
+
+             // El vendedor (seller) recibe el dinero
+             d.economyLedger.unshift({
+                id: 'led_sell_' + Date.now(), 
+                ts: Date.now(), 
+                type: 'transfer', 
+                teamId: seller.id, 
+                teamName: seller.name,
+                amount: payload.uniquePrice, 
+                reason: `Venta: ${p.name}`, 
+                meta: { playerId: p.id, toTeamId: buyer.id }
+             });
           }
         }
       });
