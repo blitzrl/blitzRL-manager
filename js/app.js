@@ -210,13 +210,15 @@ async function boot(){
     }
 
     // ============================================================
-    // RADAR AUTOMÁTICO: Cada 10 segundos busca ofertas aceptadas
+    // RADAR AUTOMÁTICO: DESACTIVADO TEMPORALMENTE PARA ARREGLAR DUPLICACIÓN
     // ============================================================
+    /*
     setInterval(() => {
       if (isAuthenticated()) {
         processAutoRequests().catch(e => console.error("Error en Radar Automático:", e));
       }
     }, 10000);
+    */
     // ============================================================
 
     console.log('[APP] Boot completo');
