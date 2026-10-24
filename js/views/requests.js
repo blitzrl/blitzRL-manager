@@ -284,66 +284,55 @@ export async function syncPortalTransfers() {
       mutate(d => {
         const p = d.players.find(x => x.id === payload.playerId);
         
-        // 🔄 SOLUCIÓN AL MOVIMIENTO INVERTIDO:
-        // Usamos los IDs del PAYLOAD (el movimiento real del jugador), no los de la fila de la request.
-        const sellerId = payload.from_team_id || payload.targetTeamId; 
-        const buyerId = payload.targetTeamId || req.from_team_id;
+        // 🔄 CORRECCIÓN DE LÓGICA: Invertimos los equipos porque el Portal los guarda al revés
+        // El equipo "from" del Portal es el que recibe (compra), el "to" es el que vende.
+        const origin = d.teams.find(t => t.id === req.to_team_id); // Vendedor
+        const target = d.teams.find(t => t.id === req.from_team_id); // Comprador
 
-        // Buscamos los equipos correctos basándonos en el flujo real del jugador
-        let seller = d.teams.find(t => t.id === sellerId);
-        let buyer = d.teams.find(t => t.id === buyerId);
-
-        // Si aún así están invertidos (porque la request se creó desde el equipo comprador), los cruzamos
-        if (seller && buyer && seller.id === req.to_team_id) {
-           const temp = seller;
-           seller = buyer;
-           buyer = temp;
-        }
-
-        if (p && buyer && seller) {
-          // 1. Crear el registro en el TransferLog (Visualizador y Gestor)
+        if (p && target) {
+          // 1. Crear el registro en el TransferLog
           d.transferLog.push({
             id: 'mov_' + Date.now(), 
             playerId: p.id, 
             playerName: p.name,
-            fromTeamId: seller.id, 
-            fromTeamName: seller.name,
-            toTeamId: buyer.id, 
-            toTeamName: buyer.name,
-            fromDivisionId: seller.divisionId || null, 
-            toDivisionId: buyer.divisionId,
+            fromTeamId: origin?.id || null, 
+            fromTeamName: origin?.name || 'Agente Libre',
+            toTeamId: target.id, 
+            toTeamName: target.name,
+            fromDivisionId: origin?.divisionId || null, 
+            toDivisionId: target.divisionId,
             date: Date.now(), 
             type: req.type === 'loan_request' ? 'loan' : 'transfer', 
             price: payload.uniquePrice || 0
           });
 
-          // 2. Crear el registro en el EconomyLedger (El dinero invertido correctamente)
+          // 2. Crear el registro en el EconomyLedger
           if (payload.uniquePrice > 0) {
              d.economyLedger ||= [];
-             
-             // El comprador (buyer) paga el dinero
+             // El que recibe (target) paga
              d.economyLedger.unshift({
-                id: 'led_buy_' + Date.now(), 
+                id: 'led_' + Date.now(), 
                 ts: Date.now(), 
                 type: 'transfer', 
-                teamId: buyer.id, 
-                teamName: buyer.name,
+                teamId: target.id, 
+                teamName: target.name,
                 amount: -payload.uniquePrice, 
                 reason: `Fichaje: ${p.name}`, 
-                meta: { playerId: p.id, fromTeamId: seller.id }
+                meta: { playerId: p.id, fromTeamId: origin?.id || null }
              });
-
-             // El vendedor (seller) recibe el dinero
-             d.economyLedger.unshift({
-                id: 'led_sell_' + Date.now(), 
-                ts: Date.now(), 
-                type: 'transfer', 
-                teamId: seller.id, 
-                teamName: seller.name,
-                amount: payload.uniquePrice, 
-                reason: `Venta: ${p.name}`, 
-                meta: { playerId: p.id, toTeamId: buyer.id }
-             });
+             // El que vende (origin) cobra
+             if (origin) {
+                d.economyLedger.unshift({
+                  id: 'led_' + Date.now(), 
+                  ts: Date.now(), 
+                  type: 'transfer', 
+                  teamId: origin.id, 
+                  teamName: origin.name,
+                  amount: payload.uniquePrice, 
+                  reason: `Venta: ${p.name}`, 
+                  meta: { playerId: p.id, toTeamId: target.id }
+                });
+             }
           }
         }
       });
@@ -353,7 +342,7 @@ export async function syncPortalTransfers() {
         .update({ status: 'sync_done', admin_response_note: 'Registrado en el Gestor' })
         .eq('id', req.id);
 
-      console.log(`[PORTAL SYNC] Movimiento de ${payload.playerName} registrado en el Gestor.`);
+      console.log(`[PORTAL SYNC] Movimiento de ${payload.playerName} registrado correctamente.`);
 
     } catch (e) {
       console.error('Error al sincronizar movimiento:', e);
